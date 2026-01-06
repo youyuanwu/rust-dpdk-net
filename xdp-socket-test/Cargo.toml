@@ -1,0 +1,9 @@
+[package]
+name = "xdp-socket-test"
+version = "0.1.0"
+edition = "2024"
+
+# See original repo: https://github.com/sudachen/xdp-rs
+
+[dependencies]
+xdp-socket = { workspace = true }

@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["xdp-socket-test",
+ "xdp-test",
+]
+
+[workspace.dependencies]
+xsk-rs = "0.8.0"
+
+xdp-socket = "0.1"

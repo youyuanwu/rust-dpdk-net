@@ -1,0 +1,251 @@
+diff --git a/.gitignore b/.gitignore
+index e69de29..47b5aa9 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -0,0 +1,2 @@
++/target
++*.lock
+\ No newline at end of file
+diff --git a/xdp-af_xdp-implementation.patch b/xdp-af_xdp-implementation.patch
+new file mode 100644
+index 0000000..e69de29
+diff --git a/xdp-tests/src/pingpong_test.rs b/xdp-tests/src/pingpong_test.rs
+index 5a82354..10fadc9 100644
+--- a/xdp-tests/src/pingpong_test.rs
++++ b/xdp-tests/src/pingpong_test.rs
+@@ -35,49 +35,49 @@ pub async fn main() -> Result<()> {
+     let e = runner::run_test_with_pair(|host_pair| async move {
+         log::debug!("Running test");
+ 
+-        log::debug!("setting up DXP pass on host {}", host_pair.host0);
+-        /*let _owned_xdp_host0 =
++        log::debug!("Attaching XDP pass program on host {}", host_pair.host0);
++        let _owned_xdp_host0 =
+         xdp::attach_pass_program(host_pair.host0.if_index).map_err(|e| {
+             log::error!("Failed to attach XDP pass program on {}: {}", host_pair.host0, e);
+             e
+-        })?;*/
+-        let _owned_xdp_host1 = xdp::attach_pass_program(host_pair.host1.if_index).map_err(|e| {
++        })?;
++        
++        log::debug!("Attaching XDP sock program on host {}", host_pair.host1);
++        let owned_xdp_host1 = xdp::attach_sock_program(host_pair.host1.if_index).map_err(|e| {
+             log::error!(
+-                "Failed to attach XDP pass program on {}: {}",
++                "Failed to attach XDP sock program on {}: {}",
+                 host_pair.host1,
+                 e
+             );
+             e
+         })?;
+ 
+-        log::info!("starting pong host on {}", host_pair.host1.if_dev);
++        log::info!("Starting XDP ponger (AF_XDP RX) on {}", host_pair.host1.if_dev);
++        let host1_if_index = host_pair.host1.if_index;
+         let host1_ip = host_pair.host1.ip_str.clone();
+         let ponger_shutdown = tokio_util::sync::CancellationToken::new();
+         let token = ponger_shutdown.clone();
+         let ponger = tokio::task::spawn_blocking(move || {
+-            match nettest::tool::udp_pingpong::run_ponger(&format!("{host1_ip}:9001"), token) {
+-                Ok(_) => log::info!("Ponger completed successfully on {}", host1_ip),
+-                Err(e) => log::error!("Failed to complete ponger on {}: {}", host1_ip, e),
++            match toolkit::xdp_ponger::run_ponger(host1_if_index, 9001, token) {
++                Ok(_) => log::info!("XDP Ponger completed - received packet via AF_XDP RX socket"),
++                Err(e) => log::error!("XDP Ponger failed: {}", e),
+             }
+         });
+-        tokio::time::sleep(std::time::Duration::from_millis(300)).await; // Give ponger time to start
+-        log::info!("starting ping host on {}", host_pair.host0.if_dev);
++        
++        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
++        
++        log::info!("Starting XDP pinger (AF_XDP TX) on {}", host_pair.host0.if_dev);
+         let host0_ip = host_pair.host0.ip_str.clone();
+         let host1_ip = host_pair.host1.ip_str.clone();
+         let pinger = tokio::task::spawn_blocking(move || {
++            // XDP pinger uses AF_XDP socket to send packets at driver level
+             match toolkit::xdp_pinger::run_pinger(&host0_ip, 9000, &host1_ip, 9001) {
+-                Ok(_) => log::info!("Pinger completed successfully on {}", host0_ip),
+-                Err(e) => log::error!("Failed to complete pinger on {}: {}", host0_ip, e),
++                Ok(_) => log::info!("XDP Pinger completed - sent packet via AF_XDP TX socket"),
++                Err(e) => log::error!("XDP Pinger failed: {}", e),
+             }
+-            // match suite::udp_pingpong::run_pinger(
+-            //     &format!("{host0_ip}:9001"),
+-            //     &format!("{host1_ip}:9000")) {
+-            //     Ok(_) => log::info!("Pinger completed successfully on {}", host0_ip),
+-            //     Err(e) => log::error!("Failed to complete pinger on {}: {}", host0_ip, e),
+-            // }
+         });
++        
+         pinger.await?;
+-        //ponger_shutdown.cancel();
+         ponger.await?;
+         Ok(())
+     })
+diff --git a/xdp-tests/src/toolkit/mod.rs b/xdp-tests/src/toolkit/mod.rs
+index df2bd58..88778fa 100644
+--- a/xdp-tests/src/toolkit/mod.rs
++++ b/xdp-tests/src/toolkit/mod.rs
+@@ -1 +1,2 @@
+ pub mod xdp_pinger;
++pub mod xdp_ponger;
+diff --git a/xdp-tests/src/toolkit/xdp_ponger.rs b/xdp-tests/src/toolkit/xdp_ponger.rs
+new file mode 100644
+index 0000000..b0106bc
+--- /dev/null
++++ b/xdp-tests/src/toolkit/xdp_ponger.rs
+@@ -0,0 +1,78 @@
++use std::io::{Error, Result};
++use xdp_socket::create_rx_socket;
++
++pub fn run_ponger(if_index: u32, src_port: u16, shutdown: tokio_util::sync::CancellationToken) -> Result<()> {    
++    log::info!("[XDP_Ponger] Creating RX socket on interface index {if_index}");
++    let mut socket = create_rx_socket(if_index, 0, None)
++        .map_err(|e| Error::other(format!("Failed to create XDP RX socket: {e}")))?;
++    
++    log::info!("[XDP_Ponger] AF_XDP RX socket created successfully on port {src_port}!");
++    log::info!("[XDP_Ponger] Waiting for PING packets...");
++    
++    // Receive packets until we get a PING or shutdown
++    loop {
++        if shutdown.is_cancelled() {
++            log::info!("[XDP_Ponger] Shutdown requested");
++            return Ok(());
++        }
++        
++        // Try to receive packets
++        match socket.seek() {
++            Ok(count) if count > 0 => {
++                // We have at least one packet
++                match socket.peek() {
++                    Ok(data) => {
++                        log::debug!("[XDP_Ponger] Received {} bytes", data.len());
++                        
++                        // Parse the ethernet frame to extract UDP payload
++                        if data.len() < 42 {
++                            // Minimum: 14 (Ethernet) + 20 (IPv4) + 8 (UDP) = 42
++                            log::warn!("[XDP_Ponger] Packet too small: {} bytes", data.len());
++                            socket.commit().map_err(|e| Error::other(format!("Failed to commit: {e}")))?;
++                            continue;
++                        }
++                        
++                        // Skip Ethernet header (14 bytes)
++                        let ip_start = 14;
++                        let ip_header_len = ((data[ip_start] & 0x0F) * 4) as usize;
++                        let udp_start = ip_start + ip_header_len;
++                        
++                        if data.len() < udp_start + 8 {
++                            log::warn!("[XDP_Ponger] Invalid packet structure");
++                            socket.commit().map_err(|e| Error::other(format!("Failed to commit: {e}")))?;
++                            continue;
++                        }
++                        
++                        // Extract UDP payload
++                        let udp_payload_start = udp_start + 8;
++                        if data.len() > udp_payload_start {
++                            let payload = &data[udp_payload_start..];
++                            if payload == b"PING" {
++                                log::info!("[XDP_Ponger] ✓ Received 'PING' packet successfully!");
++                                socket.commit().map_err(|e| Error::other(format!("Failed to commit: {e}")))?;
++                                return Ok(());
++                            } else {
++                                let payload_str = String::from_utf8_lossy(payload);
++                                log::debug!("[XDP_Ponger] Received unexpected payload: '{}'", payload_str);
++                            }
++                        }
++                        
++                        socket.commit().map_err(|e| Error::other(format!("Failed to commit: {e}")))?;
++                    }
++                    Err(e) => {
++                        log::error!("[XDP_Ponger] Failed to peek: {e}");
++                        return Err(Error::other(format!("Failed to peek: {e}")));
++                    }
++                }
++            }
++            Ok(_) => {
++                // No packets available, wait a bit
++                std::thread::sleep(std::time::Duration::from_millis(10));
++            }
++            Err(e) => {
++                log::error!("[XDP_Ponger] Failed to seek: {e}");
++                return Err(Error::other(format!("Failed to seek: {e}")));
++            }
++        }
++    }
++}
+diff --git a/xdp-tests/src/xdp/mod.rs b/xdp-tests/src/xdp/mod.rs
+index bd690c5..74b08e6 100644
+--- a/xdp-tests/src/xdp/mod.rs
++++ b/xdp-tests/src/xdp/mod.rs
+@@ -1,4 +1,6 @@
+ pub mod xdp_pass;
++pub mod xdp_sock;
+ pub use xdp_util::{OwnedXdpProg, xdp_attach_program};
+ 
+ pub use xdp_pass::attach_pass_program;
++pub use xdp_sock::attach_sock_program;
+diff --git a/xdp-tests/src/xdp/xdp_sock.c b/xdp-tests/src/xdp/xdp_sock.c
+new file mode 100644
+index 0000000..953a60f
+--- /dev/null
++++ b/xdp-tests/src/xdp/xdp_sock.c
+@@ -0,0 +1,27 @@
++#include <linux/bpf.h>
++#include <bpf/bpf_helpers.h>
++
++// XSK (AF_XDP socket) map to redirect packets to user space
++struct {
++    __uint(type, BPF_MAP_TYPE_XSKMAP);
++    __type(key, __u32);
++    __type(value, __u32);
++    __uint(max_entries, 64);
++} xsks_map SEC(".maps");
++
++SEC("xdp")
++int xdp_sock_prog(struct xdp_md *ctx) {
++    // Get the queue index
++    __u32 index = ctx->rx_queue_index;
++    
++    // Try to redirect to the AF_XDP socket
++    // If there's an AF_XDP socket registered for this queue, redirect to it
++    // Otherwise, pass the packet to the kernel network stack
++    if (bpf_map_lookup_elem(&xsks_map, &index))
++        return bpf_redirect_map(&xsks_map, index, 0);
++    
++    // No AF_XDP socket for this queue, pass to kernel
++    return XDP_PASS;
++}
++
++char LICENSE[] SEC("license") = "MIT";
+diff --git a/xdp-tests/src/xdp/xdp_sock.rs b/xdp-tests/src/xdp/xdp_sock.rs
+new file mode 100644
+index 0000000..19006d5
+--- /dev/null
++++ b/xdp-tests/src/xdp/xdp_sock.rs
+@@ -0,0 +1,10 @@
++use crate::xdp::{OwnedXdpProg, xdp_attach_program};
++use include_bytes_aligned::include_bytes_aligned;
++use std::io;
++
++const XDP_SOCK_CODE: &[u8] = include_bytes_aligned!(16, concat!(env!("OUT_DIR"), "/xdp_sock.o"));
++const XDP_SOCK_PROG: &str = "xdp_sock_prog";
++
++pub fn attach_sock_program(if_index: u32) -> io::Result<OwnedXdpProg> {
++    xdp_attach_program(if_index, XDP_SOCK_CODE, XDP_SOCK_PROG)
++}
+diff --git a/xdp-util/src/xdp_prog.rs b/xdp-util/src/xdp_prog.rs
+index a2edb93..4b7dc20 100644
+--- a/xdp-util/src/xdp_prog.rs
++++ b/xdp-util/src/xdp_prog.rs
+@@ -69,6 +69,10 @@ pub struct OwnedXdpProg {
+     pub bpf_link: *mut libbpf_sys::bpf_link,
+ }
+ 
++// Safety: The BPF object and link are managed by libbpf which is thread-safe
++unsafe impl Send for OwnedXdpProg {}
++unsafe impl Sync for OwnedXdpProg {}
++
+ impl Drop for OwnedXdpProg {
+     fn drop(&mut self) {
+         if !self.bpf_link.is_null() {
