@@ -142,9 +142,7 @@ pub struct DpdkDeviceWithPool {
     mempool: Mempool,
     rx_batch: ArrayVec<Mbuf, 64>,
     tx_batch: ArrayVec<Mbuf, 64>,
-    loopback_batch: ArrayVec<Mbuf, 64>, // For software loopback
     mtu: usize,
-    loopback_enabled: bool,
 }
 
 impl DpdkDeviceWithPool {
@@ -155,30 +153,13 @@ impl DpdkDeviceWithPool {
             mempool,
             rx_batch: ArrayVec::new(),
             tx_batch: ArrayVec::new(),
-            loopback_batch: ArrayVec::new(),
             mtu,
-            loopback_enabled: false,
         }
-    }
-
-    /// Enable software loopback mode for testing
-    pub fn enable_loopback(&mut self) {
-        self.loopback_enabled = true;
     }
 
     fn poll_rx(&mut self) {
         // First flush any pending TX packets
         self.flush_tx();
-
-        // Then check if we have loopback packets
-        if !self.loopback_batch.is_empty() {
-            // Move loopback packets to rx_batch
-            while !self.loopback_batch.is_empty() && !self.rx_batch.is_full() {
-                if let Some(mbuf) = self.loopback_batch.pop() {
-                    let _ = self.rx_batch.try_push(mbuf);
-                }
-            }
-        }
 
         // Then poll from network if rx_batch has space
         if self.rx_batch.is_empty() {
@@ -187,25 +168,9 @@ impl DpdkDeviceWithPool {
     }
 
     fn flush_tx(&mut self) {
-        if self.loopback_enabled {
-            // In loopback mode, copy TX packets to loopback buffer
-            while !self.tx_batch.is_empty() {
-                if let Some(mbuf) = self.tx_batch.pop() {
-                    // Clone the packet data for loopback
-                    if let Some(mut loopback_mbuf) = self.mempool.try_alloc() {
-                        let data = mbuf.data();
-                        loopback_mbuf.extend_from_slice(data);
-                        let _ = self.loopback_batch.try_push(loopback_mbuf);
-                    }
-                    // Still need to free the original
-                    drop(mbuf);
-                }
-            }
-        } else {
-            // Normal mode - send to network
-            while !self.tx_batch.is_empty() {
-                self.txq.tx(&mut self.tx_batch);
-            }
+        // Normal mode - send to network
+        while !self.tx_batch.is_empty() {
+            self.txq.tx(&mut self.tx_batch);
         }
     }
 }

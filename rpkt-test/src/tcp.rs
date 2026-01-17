@@ -147,7 +147,8 @@ pub fn tcp_echo_test(use_hardware: bool) {
     // Gateway won't help because it only routes to different networks
     // Physical NICs don't loopback packets to themselves at hardware level
     if use_hardware {
-        device.enable_loopback();
+        // software loopback removed
+        // device.enable_loopback();
     }
 
     // Get the actual MAC address from DPDK device
