@@ -1,9 +1,15 @@
 pub mod tcp;
 pub mod udp;
 
+pub mod echo_server;
+pub mod tcp_echo;
+
 pub mod util {
 
     use std::process::Command;
+
+    pub const TEST_MBUF_COUNT: u32 = 8192;
+    pub const TEST_MBUF_CACHE_SIZE: u32 = 256;
 
     /// Ensure that hugepages are set up correctly
     /// nr_hugepages: number of hugepages to allocate

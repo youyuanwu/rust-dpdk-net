@@ -2,11 +2,14 @@ use dpdk_net::tcp::{DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DpdkDevi
 use nix::ifaddrs::getifaddrs;
 use rpkt_dpdk::*;
 use smoltcp::iface::{Config, Interface, SocketSet};
-use smoltcp::socket::tcp;
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 use std::fs;
 use std::io::{BufRead, BufReader};
+use std::time::Duration;
+
+use crate::tcp_echo::{EchoClient, EchoServer, SocketConfig, run_echo_test};
+use crate::util::{TEST_MBUF_CACHE_SIZE, TEST_MBUF_COUNT};
 
 /// Get PCI address for a network interface
 pub fn get_pci_addr(interface: &str) -> Option<String> {
@@ -123,7 +126,13 @@ pub fn tcp_echo_test(use_hardware: bool) {
         .unwrap();
     // Create mempool
     service()
-        .mempool_alloc("tcp_pool", 8192, 256, DEFAULT_MBUF_DATA_ROOM_SIZE as u16, 0)
+        .mempool_alloc(
+            "tcp_pool",
+            TEST_MBUF_COUNT,
+            TEST_MBUF_CACHE_SIZE,
+            DEFAULT_MBUF_DATA_ROOM_SIZE as u16,
+            0,
+        )
         .unwrap();
 
     // Configure port
@@ -170,149 +179,52 @@ pub fn tcp_echo_test(use_hardware: bool) {
     // Add a route for loopback traffic
     iface.routes_mut().add_default_ipv4_route(gateway).unwrap();
 
-    // Create socket set with two TCP sockets
+    // Create socket set
     let mut sockets = SocketSet::new(vec![]);
 
-    // Server socket - listens on port 8080
-    let server_rx_buffer = tcp::SocketBuffer::new(vec![0; 4096]);
-    let server_tx_buffer = tcp::SocketBuffer::new(vec![0; 4096]);
-    let mut server_socket = tcp::Socket::new(server_rx_buffer, server_tx_buffer);
-    server_socket.listen(8080).unwrap();
-    let server_handle = sockets.add(server_socket);
+    // Create server and client using the new API
+    let mut server = EchoServer::new(&mut sockets, 8080, SocketConfig::default());
 
-    // Client socket - will connect to the server
-    let client_rx_buffer = tcp::SocketBuffer::new(vec![0; 4096]);
-    let client_tx_buffer = tcp::SocketBuffer::new(vec![0; 4096]);
-    let client_socket = tcp::Socket::new(client_rx_buffer, client_tx_buffer);
-    let client_handle = sockets.add(client_socket);
+    let mut client = EchoClient::new(
+        &mut sockets,
+        &mut iface,
+        ip_addr,
+        8080,
+        49152,
+        SocketConfig::default(),
+    );
+    client.send(b"Hello, TCP server!");
 
     println!("Smoltcp interface initialized on DPDK");
     println!("IP: {}/24", ip_addr);
     println!("MAC: {:?}", mac_addr);
     println!("Server listening on port 8080");
 
-    let mut client_connected = false;
-    let mut client_sent = false;
-    let mut server_echoed = false;
-    let mut client_received = false;
+    // Run the echo test
+    let result = run_echo_test(
+        &mut device,
+        &mut iface,
+        &mut sockets,
+        &mut server,
+        &mut client,
+        Duration::from_secs(5),
+    );
 
-    // Poll loop - run for up to 200 iterations to allow TCP handshake
-    for iteration in 0..200 {
-        let timestamp = Instant::now();
-        let poll_result = iface.poll(timestamp, &mut device, &mut sockets);
-
-        // Debug output every 20 iterations
-        if iteration % 20 == 0 && iteration > 0 {
-            println!(
-                "[Debug] Iteration {}: poll_result={:?}",
-                iteration, poll_result
-            );
-        }
-
-        // Client socket logic
-        {
-            let client = sockets.get_mut::<tcp::Socket>(client_handle);
-
-            if !client_connected && !client.is_open() {
-                // Connect to local server
-                println!("[Client] Connecting to {}:8080", ip_addr);
-                let remote_endpoint = (ip_addr, 8080);
-                client
-                    .connect(iface.context(), remote_endpoint, 49152)
-                    .unwrap();
-                client_connected = true;
-            } else if client.is_active() && client.may_send() && !client_sent {
-                // Send data once connected and ready
-                let data = b"Hello, TCP server!";
-                if client.send_slice(data).is_ok() {
-                    println!("[Client] Sent: {:?}", std::str::from_utf8(data).unwrap());
-                    client_sent = true;
-                }
-            } else if client.may_recv() {
-                // Read response from server
-                client
-                    .recv(|data| {
-                        if !data.is_empty() {
-                            println!(
-                                "[Client] Received: {:?}",
-                                std::str::from_utf8(data).unwrap()
-                            );
-                            client_received = true;
-                        }
-                        (data.len(), ())
-                    })
-                    .ok();
-            }
-
-            // Debug output every 20 iterations
-            if iteration % 20 == 0 && iteration > 0 {
-                let state = client.state();
-                println!(
-                    "[Debug] Iteration {}: Client state={:?}, may_send={}, may_recv={}",
-                    iteration,
-                    state,
-                    client.may_send(),
-                    client.may_recv()
-                );
-            }
-        }
-
-        // Server socket logic
-        {
-            let server = sockets.get_mut::<tcp::Socket>(server_handle);
-
-            // Debug output every 20 iterations
-            if iteration % 20 == 0 && iteration > 0 {
-                let state = server.state();
-                println!(
-                    "[Debug] Iteration {}: Server state={:?}, is_listening={}, is_active={}, may_recv={}",
-                    iteration,
-                    state,
-                    server.is_listening(),
-                    server.is_active(),
-                    server.may_recv()
-                );
-            }
-
-            if server.may_recv() {
-                // Read data from client and collect it
-                let mut echo_data = Vec::new();
-                let received = server.recv(|data| {
-                    if !data.is_empty() {
-                        println!(
-                            "[Server] Received: {:?}",
-                            std::str::from_utf8(data).unwrap()
-                        );
-                        echo_data.extend_from_slice(data);
-                    }
-                    (data.len(), ())
-                });
-
-                // Echo back the data if we received any
-                if received.is_ok()
-                    && !echo_data.is_empty()
-                    && server.may_send()
-                    && server.send_slice(&echo_data).is_ok()
-                {
-                    println!("[Server] Echoed back {} bytes", echo_data.len());
-                    server_echoed = true;
-                }
-            }
-        }
-
-        // Exit early if we've completed the echo cycle
-        if server_echoed && client_received && iteration > 10 {
-            println!("Echo test completed successfully!");
-            break;
-        }
-
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    // Print results
+    println!("\n=== Test Results ===");
+    println!("  Connected: {}", result.connected);
+    println!("  Bytes sent: {}", result.bytes_sent);
+    println!("  Bytes received: {}", result.bytes_received);
+    println!("  Echo verified: {}", result.echo_verified);
+    println!("  Server stats: {:?}", server.stats());
 
     // Assert that the full echo cycle completed
-    assert!(client_sent, "Client failed to send data");
-    assert!(server_echoed, "Server failed to echo data back");
-    assert!(client_received, "Client failed to receive echoed data");
+    assert!(result.connected, "Client failed to connect");
+    assert!(result.echo_verified, "Echo verification failed");
+    assert_eq!(result.bytes_sent, 18, "Wrong number of bytes sent");
+    assert_eq!(result.bytes_received, 18, "Wrong number of bytes received");
+
+    println!("Echo test completed successfully!");
 
     // Cleanup
     drop(device);

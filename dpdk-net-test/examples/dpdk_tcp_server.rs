@@ -11,13 +11,11 @@
 //!   # Type messages and see them echoed back
 
 use dpdk_net::tcp::{DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DpdkDeviceWithPool};
+use dpdk_net_test::echo_server::{EchoServerConfig, run_echo_server, setup_ctrlc_handler};
 use rpkt_dpdk::*;
 use smoltcp::iface::{Config, Interface, SocketSet};
-use smoltcp::socket::tcp;
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
-use std::thread;
-use std::time::Duration;
 
 fn main() {
     // Setup hugepages
@@ -103,97 +101,39 @@ fn main() {
     // Create socket set
     let mut sockets = SocketSet::new(vec![]);
 
-    // Create server socket
-    let server_rx_buffer = tcp::SocketBuffer::new(vec![0; 4096]);
-    let server_tx_buffer = tcp::SocketBuffer::new(vec![0; 4096]);
-    let mut server_socket = tcp::Socket::new(server_rx_buffer, server_tx_buffer);
-    server_socket.listen(8080).unwrap();
-    let server_handle = sockets.add(server_socket);
-
-    println!("\n✓ Server listening on {}:8080", ip_addr);
+    let port = 8080;
+    println!("\n✓ Server will listen on {}:{}", ip_addr, port);
     println!("\nConnect from another machine:");
-    println!("  nc {} 8080", ip_addr);
+    println!("  nc {} {}", ip_addr, port);
     println!("\nPress Ctrl+C to stop the server\n");
     println!("========================================\n");
 
     // Setup Ctrl+C handler
-    let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let r = running.clone();
-    ctrlc::set_handler(move || {
-        println!("\n\nReceived Ctrl+C, shutting down...");
-        r.store(false, std::sync::atomic::Ordering::SeqCst);
-    })
-    .expect("Error setting Ctrl+C handler");
+    let running = setup_ctrlc_handler();
 
-    // Poll loop
-    let mut iteration = 0u64;
-    let start_time = std::time::Instant::now();
-    let mut last_status_time = start_time;
+    // Run the echo server loop (creates and manages the socket internally)
+    let result = run_echo_server(
+        &mut device,
+        &mut iface,
+        &mut sockets,
+        port,
+        running,
+        EchoServerConfig::default(),
+    );
 
-    while running.load(std::sync::atomic::Ordering::SeqCst) {
-        let timestamp = Instant::now();
-        iface.poll(timestamp, &mut device, &mut sockets);
-
-        let server = sockets.get_mut::<tcp::Socket>(server_handle);
-
-        // Check if we have an active connection
-        if server.is_active() {
-            // Print connection status every 10 seconds
-            let now = std::time::Instant::now();
-            if now.duration_since(last_status_time).as_secs() >= 10 {
-                println!(
-                    "[{}] Connection active (uptime: {}s)",
-                    format_time(),
-                    start_time.elapsed().as_secs()
-                );
-                last_status_time = now;
-            }
-
-            // Check if we can receive data
-            if server.can_recv() {
-                let data = server
-                    .recv(|buffer| {
-                        let len = buffer.len();
-                        if len > 0 {
-                            let data = buffer.to_vec();
-                            (len, data)
-                        } else {
-                            (0, vec![])
-                        }
-                    })
-                    .unwrap();
-
-                if !data.is_empty() {
-                    let data_str = String::from_utf8_lossy(&data);
-                    println!(
-                        "[{}] [RX] {} bytes: {:?}",
-                        format_time(),
-                        data.len(),
-                        data_str.trim()
-                    );
-
-                    // Echo back immediately
-                    if server.can_send() {
-                        server.send_slice(&data).unwrap();
-                        println!("[{}] [TX] Echoed {} bytes", format_time(), data.len());
-                    }
-                }
-            }
-        } else if iteration.is_multiple_of(10000) {
-            // Print waiting message every ~1 second
-            println!(
-                "[{}] Waiting for connections... (uptime: {}s)",
-                format_time(),
-                start_time.elapsed().as_secs()
-            );
-        }
-
-        iteration += 1;
-        thread::sleep(Duration::from_micros(100));
-    }
+    // Print final statistics
+    println!("\n========================================");
+    println!("Server Statistics:");
+    println!("  Runtime: {} seconds", result.runtime_secs);
+    println!("  Connections: {}", result.stats.connections);
+    println!("  Bytes received: {}", result.stats.bytes_received);
+    println!("  Bytes sent: {}", result.stats.bytes_sent);
+    println!("  Bytes dropped: {}", result.stats.bytes_dropped);
+    println!("  Send errors: {}", result.stats.send_errors);
+    println!("========================================\n");
 
     // Cleanup
-    println!("\nCleaning up...");
+    println!("Cleaning up...");
     drop(device);
     drop(sockets);
     drop(iface);
@@ -203,16 +143,4 @@ fn main() {
     service().graceful_cleanup().unwrap();
 
     println!("Server stopped.");
-}
-
-fn format_time() -> String {
-    use std::time::SystemTime;
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap();
-    let secs = now.as_secs() % 86400; // Seconds since midnight
-    let hours = secs / 3600;
-    let minutes = (secs % 3600) / 60;
-    let seconds = secs % 60;
-    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
