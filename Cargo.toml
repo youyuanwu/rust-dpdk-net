@@ -13,6 +13,9 @@ arrayvec = "0.7"
 serial_test = "3"
 nix = { version = "0.30", features = ["net"] }
 tokio = "1"
+hyper = { version = "1", features = ["http1", "http2", "server", "client"] }
+http-body-util = "0.1"
+hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 
 # crate in this workspace
 dpdk-net = { path = "dpdk-net" }

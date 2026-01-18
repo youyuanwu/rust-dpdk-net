@@ -12,6 +12,9 @@ arrayvec.workspace = true
 nix.workspace = true
 dpdk-net.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "sync"] }
+hyper = { workspace = true }
+http-body-util.workspace = true
+hyper-util.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
