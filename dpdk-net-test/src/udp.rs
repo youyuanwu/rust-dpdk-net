@@ -1,5 +1,7 @@
 use arrayvec::ArrayVec;
-use rpkt_dpdk::*;
+use dpdk_net::api::rte::mbuf::Mbuf;
+use dpdk_net::api::rte::pktmbuf::MemPool;
+use dpdk_net::api::rte::queue::{RxQueue, TxQueue};
 use smoltcp::wire;
 use std::net::Ipv4Addr;
 
@@ -49,7 +51,7 @@ pub struct UdpSocket {
     /// TX queue for sending packets
     txq: Option<TxQueue>,
     /// Mempool for allocating mbufs
-    mempool: Option<Mempool>,
+    mempool: Option<MemPool>,
     /// TX batch buffer
     tx_batch: ArrayVec<Mbuf, 64>,
     /// RX batch buffer
@@ -95,7 +97,7 @@ impl UdpSocket {
         &mut self,
         rxq: RxQueue,
         txq: TxQueue,
-        mempool: Mempool,
+        mempool: MemPool,
     ) -> Result<(), SocketError> {
         self.rxq = Some(rxq);
         self.txq = Some(txq);
@@ -195,7 +197,7 @@ impl UdpSocket {
             return Ok(0);
         }
 
-        let txq = self.txq.as_mut().ok_or(SocketError::QueueError)?;
+        let txq = self.txq.as_ref().ok_or(SocketError::QueueError)?;
         let mut sent = 0;
 
         while !self.tx_batch.is_empty() {
@@ -212,7 +214,7 @@ impl UdpSocket {
     /// This fills the internal RX batch by receiving from the RX queue.
     /// Returns the number of packets received.
     pub fn poll(&mut self) -> Result<usize, SocketError> {
-        let rxq = self.rxq.as_mut().ok_or(SocketError::QueueError)?;
+        let rxq = self.rxq.as_ref().ok_or(SocketError::QueueError)?;
 
         // Receive packets into RX batch
         let received = rxq.rx(&mut self.rx_batch);

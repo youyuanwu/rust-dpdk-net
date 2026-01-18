@@ -6,10 +6,8 @@
 //! Note: This is a separate test file because DPDK has global state that persists
 //! across tests within the same process.
 
-use dpdk_net::tcp::{DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DpdkDeviceWithPool};
+use dpdk_net_test::dpdk_test::DpdkTestContextBuilder;
 use dpdk_net_test::tcp_echo::{EchoServer, SocketConfig, run_stress_test};
-use dpdk_net_test::util::{TEST_MBUF_CACHE_SIZE, TEST_MBUF_COUNT};
-use rpkt_dpdk::*;
 use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
@@ -25,39 +23,16 @@ fn test_tcp_echo_stress() {
     const NUM_ROUNDS: usize = 3;
     const MESSAGES_PER_ROUND: usize = 5;
 
-    // Initialize DPDK
-    DpdkOption::new()
-        .args(["--no-huge", "--no-pci", "--vdev=net_ring0"])
-        .init()
-        .unwrap();
+    // Create DPDK test context using the shared harness
+    let (_ctx, mut device) = DpdkTestContextBuilder::new()
+        .vdev("net_ring0")
+        .mempool_name("stress_test_pool")
+        .build()
+        .expect("Failed to create DPDK test context");
 
-    // Create mempool
-    service()
-        .mempool_alloc(
-            "stress_test_pool",
-            TEST_MBUF_COUNT,
-            TEST_MBUF_CACHE_SIZE,
-            DEFAULT_MBUF_DATA_ROOM_SIZE as u16,
-            0,
-        )
-        .unwrap();
+    println!("DPDK context created successfully");
 
-    // Configure port
-    let eth_conf = EthConf::new();
-    let rxq_confs = vec![RxqConf::new(1024, 0, "stress_test_pool")];
-    let txq_confs = vec![TxqConf::new(1024, 0)];
-
-    service()
-        .dev_configure_and_start(0, &eth_conf, &rxq_confs, &txq_confs)
-        .unwrap();
-
-    let rxq = service().rx_queue(0, 0).unwrap();
-    let txq = service().tx_queue(0, 0).unwrap();
-    let mempool = service().mempool("stress_test_pool").unwrap();
-
-    let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
-    let mut device = DpdkDeviceWithPool::new(rxq, txq, mempool, 1500, mbuf_capacity);
-
+    // Configure smoltcp interface
     let mac_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
     let config = Config::new(mac_addr.into());
     let mut iface = Interface::new(config, &mut device, Instant::now());
@@ -102,10 +77,7 @@ fn test_tcp_echo_stress() {
         );
     }
 
-    // Cleanup - ignore errors since DPDK cleanup can be finicky
-    let _ = service().dev_stop_and_close(0);
-    let _ = service().mempool_free("stress_test_pool");
-    let _ = service().graceful_cleanup();
+    // Cleanup happens automatically when _ctx is dropped
 
     assert!(all_passed, "Not all rounds completed successfully");
     println!("\n=== Stress Test Passed! ===\n");

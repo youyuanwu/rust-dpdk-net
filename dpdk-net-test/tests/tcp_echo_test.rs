@@ -8,9 +8,8 @@
 //! Note: This is a separate test file because DPDK has global state that persists
 //! across tests within the same process.
 
-use dpdk_net::tcp::{DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DpdkDeviceWithPool};
+use dpdk_net_test::dpdk_test::DpdkTestContextBuilder;
 use dpdk_net_test::tcp_echo::{EchoClient, EchoServer, SocketConfig, run_echo_test};
-use rpkt_dpdk::*;
 use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
@@ -24,40 +23,14 @@ const TEST_MESSAGE: &[u8] = b"Hello, Echo Server!";
 fn test_tcp_echo_loopback() {
     println!("\n=== TCP Echo Loopback Test ===\n");
 
-    // Initialize DPDK with virtual ring device
-    DpdkOption::new()
-        .args(["--no-huge", "--no-pci", "--vdev=net_ring0"])
-        .init()
-        .unwrap();
+    // Create DPDK test context using the shared harness
+    let (_ctx, mut device) = DpdkTestContextBuilder::new()
+        .vdev("net_ring0")
+        .mempool_name("echo_test_pool")
+        .build()
+        .expect("Failed to create DPDK test context");
 
-    // Create mempool
-    service()
-        .mempool_alloc(
-            "echo_test_pool",
-            8192,
-            256,
-            DEFAULT_MBUF_DATA_ROOM_SIZE as u16,
-            0,
-        )
-        .unwrap();
-
-    // Configure port with 1 queue pair
-    let eth_conf = EthConf::new();
-    let rxq_confs = vec![RxqConf::new(1024, 0, "echo_test_pool")];
-    let txq_confs = vec![TxqConf::new(1024, 0)];
-
-    service()
-        .dev_configure_and_start(0, &eth_conf, &rxq_confs, &txq_confs)
-        .unwrap();
-
-    // Get queue and mempool
-    let rxq = service().rx_queue(0, 0).unwrap();
-    let txq = service().tx_queue(0, 0).unwrap();
-    let mempool = service().mempool("echo_test_pool").unwrap();
-
-    // Create DPDK device
-    let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
-    let mut device = DpdkDeviceWithPool::new(rxq, txq, mempool, 1500, mbuf_capacity);
+    println!("DPDK context created successfully");
 
     // Configure smoltcp interface
     let mac_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
@@ -111,14 +84,7 @@ fn test_tcp_echo_loopback() {
     assert_eq!(result.bytes_sent, TEST_MESSAGE.len());
     assert_eq!(result.bytes_received, TEST_MESSAGE.len());
 
-    // Cleanup
-    drop(sockets);
-    drop(iface);
-    drop(device);
-
-    service().dev_stop_and_close(0).unwrap();
-    service().mempool_free("echo_test_pool").unwrap();
-    service().graceful_cleanup().unwrap();
+    // Cleanup happens automatically when _ctx is dropped
 
     println!("\n=== Test Passed! ===\n");
 }

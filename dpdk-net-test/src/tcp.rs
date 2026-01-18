@@ -1,6 +1,4 @@
-use dpdk_net::tcp::{DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DpdkDeviceWithPool};
 use nix::ifaddrs::getifaddrs;
-use rpkt_dpdk::*;
 use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
@@ -8,8 +6,11 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::time::Duration;
 
+use crate::dpdk_test::{
+    DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DEFAULT_MTU, DpdkDeviceWithPool,
+    DpdkTestContext, DpdkTestContextBuilder,
+};
 use crate::tcp_echo::{EchoClient, EchoServer, SocketConfig, run_echo_test};
-use crate::util::{TEST_MBUF_CACHE_SIZE, TEST_MBUF_COUNT};
 
 /// Get PCI address for a network interface
 pub fn get_pci_addr(interface: &str) -> Option<String> {
@@ -98,76 +99,16 @@ pub fn get_default_gateway() -> Option<Ipv4Address> {
     None
 }
 
-pub fn tcp_echo_test(use_hardware: bool) {
-    // Get IP address BEFORE DPDK takes over the interface
-    let interface = "eth1";
-    let ip_addr = if use_hardware {
-        let addr = get_interface_ipv4(interface).expect("Failed to get IP address for eth1");
-        println!("[Debug] Detected IP address for {}: {:?}", interface, addr);
-        addr
-    } else {
-        Ipv4Address::new(192, 168, 1, 100) // Use test IP for virtual device
-    };
-
-    let gateway = get_default_gateway().unwrap_or(Ipv4Address::new(10, 0, 0, 1)); // Fallback to Azure default
-    println!("[Debug] Detected gateway: {:?}", gateway);
-
-    let args = if use_hardware {
-        // Dynamically get PCI address for eth1
-        let pci_addr = get_pci_addr(interface).expect("Failed to get PCI address for eth1");
-        format!("-a {}", pci_addr)
-    } else {
-        "--no-huge --no-pci --vdev=net_ring0".to_string() // virtual ring device only
-    };
-    // Initialize DPDK with specified device
-    DpdkOption::new()
-        .args(args.split(" ").collect::<Vec<_>>())
-        .init()
-        .unwrap();
-    // Create mempool
-    service()
-        .mempool_alloc(
-            "tcp_pool",
-            TEST_MBUF_COUNT,
-            TEST_MBUF_CACHE_SIZE,
-            DEFAULT_MBUF_DATA_ROOM_SIZE as u16,
-            0,
-        )
-        .unwrap();
-
-    // Configure port
-    let eth_conf = EthConf::new();
-    let rxq_confs = vec![RxqConf::new(1024, 0, "tcp_pool")];
-    let txq_confs = vec![TxqConf::new(1024, 0)];
-
-    service()
-        .dev_configure_and_start(0, &eth_conf, &rxq_confs, &txq_confs)
-        .unwrap();
-
-    // Get queues and mempool
-    let rxq = service().rx_queue(0, 0).unwrap();
-    let txq = service().tx_queue(0, 0).unwrap();
-    let mempool = service().mempool("tcp_pool").unwrap();
-
-    // Create DPDK device for smoltcp
-    let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
-    let mut device = DpdkDeviceWithPool::new(rxq, txq, mempool, 1500, mbuf_capacity);
-
-    // Enable software loopback for self-addressed packets
-    // Gateway won't help because it only routes to different networks
-    // Physical NICs don't loopback packets to themselves at hardware level
-    if use_hardware {
-        // software loopback removed
-        // device.enable_loopback();
-    }
-
-    // Get the actual MAC address from DPDK device
-    let dev_info = service().dev_info(0).unwrap();
-    let mac_addr = EthernetAddress(dev_info.mac_addr);
-
+/// Run TCP echo test using new wrappers
+fn run_tcp_echo_with_device(
+    device: &mut DpdkDeviceWithPool,
+    ip_addr: Ipv4Address,
+    gateway: Ipv4Address,
+    mac_addr: EthernetAddress,
+) {
     // Configure smoltcp interface with the device's MAC address
     let config = Config::new(mac_addr.into());
-    let mut iface = Interface::new(config, &mut device, Instant::now());
+    let mut iface = Interface::new(config, device, Instant::now());
 
     // Set IP address and enable loopback
     iface.update_ip_addrs(|ip_addrs| {
@@ -202,7 +143,7 @@ pub fn tcp_echo_test(use_hardware: bool) {
 
     // Run the echo test
     let result = run_echo_test(
-        &mut device,
+        device,
         &mut iface,
         &mut sockets,
         &mut server,
@@ -225,15 +166,76 @@ pub fn tcp_echo_test(use_hardware: bool) {
     assert_eq!(result.bytes_received, 18, "Wrong number of bytes received");
 
     println!("Echo test completed successfully!");
+}
 
-    // Cleanup
-    drop(device);
-    drop(sockets);
-    drop(iface);
+pub fn tcp_echo_test(use_hardware: bool) {
+    // Get IP address BEFORE DPDK takes over the interface
+    let interface = "eth1";
+    let ip_addr = if use_hardware {
+        let addr = get_interface_ipv4(interface).expect("Failed to get IP address for eth1");
+        println!("[Debug] Detected IP address for {}: {:?}", interface, addr);
+        addr
+    } else {
+        Ipv4Address::new(192, 168, 1, 100) // Use test IP for virtual device
+    };
 
-    service().dev_stop_and_close(0).unwrap();
-    service().mempool_free("tcp_pool").unwrap();
-    service().graceful_cleanup().unwrap();
+    let gateway = get_default_gateway().unwrap_or(Ipv4Address::new(10, 0, 0, 1)); // Fallback to Azure default
+    println!("[Debug] Detected gateway: {:?}", gateway);
+
+    // Build DPDK context using new wrappers
+    let (_ctx, mut device): (DpdkTestContext, DpdkDeviceWithPool) = if use_hardware {
+        // Dynamically get PCI address for eth1
+        let pci_addr = get_pci_addr(interface).expect("Failed to get PCI address for eth1");
+
+        // For hardware, we need to use EalBuilder directly with PCI device
+        use dpdk_net::api::rte::eal::EalBuilder;
+        use dpdk_net::api::rte::eth::{EthConf, EthDevBuilder, RxQueueConf, TxQueueConf};
+        use dpdk_net::api::rte::pktmbuf::{MemPool, MemPoolConfig};
+        use dpdk_net::api::rte::queue::{RxQueue, TxQueue};
+
+        let eal = EalBuilder::new()
+            .arg(format!("-a {}", pci_addr))
+            .init()
+            .expect("Failed to initialize EAL");
+
+        let mempool_config = MemPoolConfig::new()
+            .num_mbufs(8191)
+            .data_room_size(DEFAULT_MBUF_DATA_ROOM_SIZE as u16);
+        let mempool =
+            MemPool::create("tcp_pool", &mempool_config).expect("Failed to create mempool");
+
+        let eth_dev = EthDevBuilder::new(0)
+            .eth_conf(EthConf::new())
+            .nb_rx_queues(1)
+            .nb_tx_queues(1)
+            .rx_queue_conf(RxQueueConf::new().nb_desc(1024))
+            .tx_queue_conf(TxQueueConf::new().nb_desc(1024))
+            .build(&mempool)
+            .expect("Failed to configure eth device");
+
+        let rxq = RxQueue::new(0, 0);
+        let txq = TxQueue::new(0, 0);
+        let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
+        let device = DpdkDeviceWithPool::new(rxq, txq, mempool, DEFAULT_MTU, mbuf_capacity);
+
+        let ctx = DpdkTestContext::from_parts(eal, eth_dev);
+        (ctx, device)
+    } else {
+        DpdkTestContextBuilder::new()
+            .vdev("net_ring0")
+            .mempool_name("tcp_pool")
+            .build()
+            .expect("Failed to create DPDK test context")
+    };
+
+    // Get the actual MAC address from DPDK device
+    let mac = _ctx
+        .eth_dev()
+        .mac_addr()
+        .expect("Failed to get MAC address");
+    let mac_addr = EthernetAddress(mac.addr_bytes);
+
+    run_tcp_echo_with_device(&mut device, ip_addr, gateway, mac_addr);
 }
 
 #[cfg(test)]

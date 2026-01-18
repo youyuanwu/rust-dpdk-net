@@ -2,36 +2,43 @@
 //
 // This demonstrates how to use the UdpSocket with DPDK.
 
+use dpdk_net::api::rte::eal::EalBuilder;
+use dpdk_net::api::rte::eth::{EthConf, EthDevBuilder, RxQueueConf, TxQueueConf};
+use dpdk_net::api::rte::pktmbuf::{MemPool, MemPoolConfig};
+use dpdk_net::api::rte::queue::{RxQueue, TxQueue};
+use dpdk_net_test::dpdk_test::DEFAULT_MBUF_DATA_ROOM_SIZE;
 use dpdk_net_test::udp::{Endpoint, UdpSocket};
-use rpkt_dpdk::*;
 use std::net::Ipv4Addr;
 
 #[test]
 fn test_udp_socket_basic() {
-    // Initialize DPDK
-    DpdkOption::new()
-        .args(["--no-huge", "--no-pci", "--vdev=net_ring0"])
+    // Initialize DPDK EAL
+    let _eal = EalBuilder::new()
+        .no_huge()
+        .no_pci()
+        .vdev("net_ring0")
         .init()
-        .unwrap();
+        .expect("Failed to initialize EAL");
 
     // Create mempool
-    service()
-        .mempool_alloc("udp_pool", 8192, 256, 2048 + 128, 0)
-        .unwrap();
+    let mempool_config = MemPoolConfig::new()
+        .num_mbufs(8192)
+        .data_room_size(DEFAULT_MBUF_DATA_ROOM_SIZE as u16);
+    let mempool = MemPool::create("udp_pool", &mempool_config).expect("Failed to create mempool");
 
-    // Configure port
-    let eth_conf = EthConf::new();
-    let rxq_confs = vec![RxqConf::new(1024, 0, "udp_pool")];
-    let txq_confs = vec![TxqConf::new(1024, 0)];
+    // Configure and start ethernet device
+    let eth_dev = EthDevBuilder::new(0)
+        .eth_conf(EthConf::new())
+        .nb_rx_queues(1)
+        .nb_tx_queues(1)
+        .rx_queue_conf(RxQueueConf::new().nb_desc(1024))
+        .tx_queue_conf(TxQueueConf::new().nb_desc(1024))
+        .build(&mempool)
+        .expect("Failed to configure eth device");
 
-    service()
-        .dev_configure_and_start(0, &eth_conf, &rxq_confs, &txq_confs)
-        .unwrap();
-
-    // Get queues and mempool
-    let rxq = service().rx_queue(0, 0).unwrap();
-    let txq = service().tx_queue(0, 0).unwrap();
-    let mempool = service().mempool("udp_pool").unwrap();
+    // Get queues
+    let rxq = RxQueue::new(0, 0);
+    let txq = TxQueue::new(0, 0);
 
     // Create and configure UDP socket
     let mut socket = UdpSocket::new();
@@ -78,7 +85,6 @@ fn test_udp_socket_basic() {
 
     // Cleanup
     drop(socket);
-    service().dev_stop_and_close(0).unwrap();
-    service().mempool_free("udp_pool").unwrap();
-    service().graceful_cleanup().unwrap();
+    let _ = eth_dev.stop();
+    let _ = eth_dev.close();
 }

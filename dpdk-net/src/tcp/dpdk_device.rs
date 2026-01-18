@@ -1,7 +1,10 @@
 use arrayvec::ArrayVec;
-use rpkt_dpdk::*;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
+
+use crate::api::rte::mbuf::Mbuf;
+use crate::api::rte::pktmbuf::MemPool;
+use crate::api::rte::queue::{RxQueue, TxQueue};
 
 /// Default headroom reserved at the front of each mbuf (matches RTE_PKTMBUF_HEADROOM)
 pub const DEFAULT_MBUF_HEADROOM: usize = 128;
@@ -30,7 +33,7 @@ impl phy::RxToken for DpdkRxToken {
 pub struct DpdkDeviceWithPool {
     rxq: RxQueue,
     txq: TxQueue,
-    mempool: Mempool,
+    mempool: MemPool,
     rx_batch: ArrayVec<Mbuf, 64>,
     tx_batch: ArrayVec<Mbuf, 64>,
     mtu: usize,
@@ -53,7 +56,7 @@ impl DpdkDeviceWithPool {
     pub fn new(
         rxq: RxQueue,
         txq: TxQueue,
-        mempool: Mempool,
+        mempool: MemPool,
         mtu: usize,
         mbuf_capacity: usize,
     ) -> Self {
@@ -147,7 +150,7 @@ impl Device for DpdkDeviceWithPool {
 }
 
 pub struct DpdkTxTokenWithPool<'a> {
-    mempool: &'a Mempool,
+    mempool: &'a MemPool,
     tx_batch: &'a mut ArrayVec<Mbuf, 64>,
 }
 

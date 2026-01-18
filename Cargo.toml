@@ -1,12 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-  "dpdk-net",
+  "dpdk-net", "dpdk-net-sys",
   "dpdk-net-test",
 ]
 
 [workspace.dependencies]
-rpkt-dpdk = { git = "https://github.com/duanjp8617/rpkt.git", rev = "ab79697ddc9fbae1a545d16fe68098f8e6ad3b87" }
 ctrlc = "3"
 smoltcp = { version = "0.12", features = ["async"] }
 arrayvec = "0.7"
@@ -17,6 +16,11 @@ hyper = { version = "1", features = ["http1", "http2", "server", "client"] }
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 
+pkg-config = "0.3"
+bindgen = "0.72"
+cc = "1.0"
+
 # crate in this workspace
 dpdk-net = { path = "dpdk-net" }
+dpdk-net-sys = { path = "dpdk-net-sys" }
 dpdk-net-test = { path = "dpdk-net-test" }

@@ -10,9 +10,13 @@
 //!   nc 10.0.0.5 8080
 //!   # Type messages and see them echoed back
 
-use dpdk_net::tcp::{DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DpdkDeviceWithPool};
+use dpdk_net::api::rte::eal::EalBuilder;
+use dpdk_net::api::rte::eth::{EthConf, EthDevBuilder, RxQueueConf, TxQueueConf};
+use dpdk_net::api::rte::pktmbuf::{MemPool, MemPoolConfig};
+use dpdk_net::api::rte::queue::{RxQueue, TxQueue};
+use dpdk_net::tcp::DpdkDeviceWithPool;
+use dpdk_net_test::dpdk_test::{DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DEFAULT_MTU};
 use dpdk_net_test::echo_server::{EchoServerConfig, run_echo_server, setup_ctrlc_handler};
-use rpkt_dpdk::*;
 use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
@@ -38,46 +42,41 @@ fn main() {
     // Get PCI address for eth1
     let pci_addr =
         dpdk_net_test::tcp::get_pci_addr(interface).expect("Failed to get PCI address for eth1");
-    let args = format!("-a {}", pci_addr);
 
-    // Initialize DPDK
-    DpdkOption::new()
-        .args(args.split(" ").collect::<Vec<_>>())
+    // Initialize DPDK EAL with PCI device
+    let _eal = EalBuilder::new()
+        .arg(format!("-a {}", pci_addr))
         .init()
-        .unwrap();
+        .expect("Failed to initialize EAL");
 
     // Create mempool
-    service()
-        .mempool_alloc(
-            "server_pool",
-            8192,
-            256,
-            DEFAULT_MBUF_DATA_ROOM_SIZE as u16,
-            0,
-        )
-        .unwrap();
+    let mempool_config = MemPoolConfig::new()
+        .num_mbufs(8192)
+        .data_room_size(DEFAULT_MBUF_DATA_ROOM_SIZE as u16);
+    let mempool =
+        MemPool::create("server_pool", &mempool_config).expect("Failed to create mempool");
 
-    // Configure port
-    let eth_conf = EthConf::new();
-    let rxq_confs = vec![RxqConf::new(1024, 0, "server_pool")];
-    let txq_confs = vec![TxqConf::new(1024, 0)];
+    // Configure and start ethernet device
+    let eth_dev = EthDevBuilder::new(0)
+        .eth_conf(EthConf::new())
+        .nb_rx_queues(1)
+        .nb_tx_queues(1)
+        .rx_queue_conf(RxQueueConf::new().nb_desc(1024))
+        .tx_queue_conf(TxQueueConf::new().nb_desc(1024))
+        .build(&mempool)
+        .expect("Failed to configure eth device");
 
-    service()
-        .dev_configure_and_start(0, &eth_conf, &rxq_confs, &txq_confs)
-        .unwrap();
-
-    // Get queues and mempool
-    let rxq = service().rx_queue(0, 0).unwrap();
-    let txq = service().tx_queue(0, 0).unwrap();
-    let mempool = service().mempool("server_pool").unwrap();
+    // Get queues
+    let rxq = RxQueue::new(0, 0);
+    let txq = TxQueue::new(0, 0);
 
     // Create DPDK device for smoltcp
     let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
-    let mut device = DpdkDeviceWithPool::new(rxq, txq, mempool, 1500, mbuf_capacity);
+    let mut device = DpdkDeviceWithPool::new(rxq, txq, mempool, DEFAULT_MTU, mbuf_capacity);
 
     // Get MAC address from DPDK
-    let dev_info = service().dev_info(0).unwrap();
-    let mac_addr = EthernetAddress(dev_info.mac_addr);
+    let mac = eth_dev.mac_addr().expect("Failed to get MAC address");
+    let mac_addr = EthernetAddress(mac.addr_bytes);
 
     // Configure smoltcp interface
     let config = Config::new(mac_addr.into());
@@ -138,9 +137,9 @@ fn main() {
     drop(sockets);
     drop(iface);
 
-    service().dev_stop_and_close(0).unwrap();
-    service().mempool_free("server_pool").unwrap();
-    service().graceful_cleanup().unwrap();
+    // Stop and close eth device
+    let _ = eth_dev.stop();
+    let _ = eth_dev.close();
 
     println!("Server stopped.");
 }

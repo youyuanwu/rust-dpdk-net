@@ -5,7 +5,6 @@ edition = "2024"
 publish = false
 
 [dependencies]
-rpkt-dpdk.workspace = true
 ctrlc.workspace = true
 smoltcp.workspace = true
 arrayvec.workspace = true

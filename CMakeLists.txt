@@ -35,6 +35,8 @@ add_custom_target(dpdk_build
 # Add custom target to install DPDK artifacts
 add_custom_target(dpdk_install
   COMMAND ninja -C ${dpdk_BINARY_DIR} install
+  # update the shared library cache
+  COMMAND ldconfig
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Installing DPDK artifacts"
   DEPENDS dpdk_build

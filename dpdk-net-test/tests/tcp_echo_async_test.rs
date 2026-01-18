@@ -12,11 +12,8 @@
 //! across tests within the same process.
 
 use dpdk_net::BoxError;
-use dpdk_net::tcp::{
-    DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DpdkDeviceWithPool, Reactor, ReactorHandle,
-    TcpListener, TcpStream,
-};
-use rpkt_dpdk::*;
+use dpdk_net::tcp::{Reactor, ReactorHandle, TcpListener, TcpStream};
+use dpdk_net_test::dpdk_test::DpdkTestContextBuilder;
 use smoltcp::iface::{Config, Interface};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
@@ -226,40 +223,14 @@ async fn run_multi_client_test(
 fn test_tcp_echo_async() {
     println!("\n=== TCP Echo Async Test ===\n");
 
-    // Initialize DPDK with virtual ring device
-    DpdkOption::new()
-        .args(["--no-huge", "--no-pci", "--vdev=net_ring0"])
-        .init()
-        .unwrap();
+    // Create DPDK test context using the shared harness (with pool for Reactor)
+    let (_ctx, mut device) = DpdkTestContextBuilder::new()
+        .vdev("net_ring0")
+        .mempool_name("async_test_pool")
+        .build()
+        .expect("Failed to create DPDK test context");
 
-    // Create mempool
-    service()
-        .mempool_alloc(
-            "async_test_pool",
-            8192,
-            256,
-            DEFAULT_MBUF_DATA_ROOM_SIZE as u16,
-            0,
-        )
-        .unwrap();
-
-    // Configure port with 1 queue pair
-    let eth_conf = EthConf::new();
-    let rxq_confs = vec![RxqConf::new(1024, 0, "async_test_pool")];
-    let txq_confs = vec![TxqConf::new(1024, 0)];
-
-    service()
-        .dev_configure_and_start(0, &eth_conf, &rxq_confs, &txq_confs)
-        .unwrap();
-
-    // Get queue and mempool
-    let rxq = service().rx_queue(0, 0).unwrap();
-    let txq = service().tx_queue(0, 0).unwrap();
-    let mempool = service().mempool("async_test_pool").unwrap();
-
-    // Create DPDK device
-    let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
-    let mut device = DpdkDeviceWithPool::new(rxq, txq, mempool, 1500, mbuf_capacity);
+    println!("DPDK context created successfully");
 
     // Configure smoltcp interface
     let mac_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
