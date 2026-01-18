@@ -12,6 +12,7 @@ smoltcp = { version = "0.12", features = ["async"] }
 arrayvec = "0.7"
 serial_test = "3"
 nix = { version = "0.30", features = ["net"] }
+tokio = "1"
 
 # crate in this workspace
 dpdk-net = { path = "dpdk-net" }

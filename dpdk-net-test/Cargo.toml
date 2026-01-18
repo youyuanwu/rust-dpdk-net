@@ -11,6 +11,7 @@ smoltcp.workspace = true
 arrayvec.workspace = true
 nix.workspace = true
 dpdk-net.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "sync"] }
 
 [dev-dependencies]
 serial_test.workspace = true

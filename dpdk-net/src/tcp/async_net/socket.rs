@@ -119,13 +119,19 @@ impl TcpStream {
         WaitConnectedFuture { socket: self }
     }
 
-    /// Close the stream gracefully
+    /// Close the stream gracefully and wait for shutdown to complete
     ///
-    /// This initiates a graceful shutdown (FIN).
-    pub fn close(&self) {
-        let mut inner = self.reactor.borrow_mut();
-        let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
-        socket.close();
+    /// This initiates a graceful shutdown (FIN) and returns a future that
+    /// completes when the connection is fully closed. The socket remains
+    /// in the socket set until the future completes, allowing the TCP
+    /// state machine to process the FIN handshake.
+    pub fn close(&self) -> CloseFuture<'_> {
+        {
+            let mut inner = self.reactor.borrow_mut();
+            let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
+            socket.close();
+        }
+        CloseFuture { socket: self }
     }
 
     /// Abort the connection immediately
@@ -142,10 +148,20 @@ impl Drop for TcpStream {
     fn drop(&mut self) {
         let mut inner = self.reactor.borrow_mut();
 
-        // Abort if not already closed to notify peer
+        // Abort only if the socket is still active and not in a closing state.
+        // If close() was called, the socket will be in FinWait1/FinWait2/Closing/TimeWait,
+        // and we should let the graceful shutdown complete.
         let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
-        if socket.state() != State::Closed {
-            socket.abort();
+        match socket.state() {
+            // Already closed or in graceful shutdown - don't abort
+            State::Closed
+            | State::FinWait1
+            | State::FinWait2
+            | State::Closing
+            | State::TimeWait
+            | State::LastAck => {}
+            // Still active - abort to notify peer
+            _ => socket.abort(),
         }
 
         // Remove from socket set
@@ -471,6 +487,30 @@ impl<'a> Future for WaitConnectedFuture<'a> {
                 Poll::Pending
             }
             // Other states - keep waiting
+            _ => {
+                socket.register_send_waker(cx.waker());
+                Poll::Pending
+            }
+        }
+    }
+}
+/// Future for waiting until a stream is closed
+pub struct CloseFuture<'a> {
+    socket: &'a TcpStream,
+}
+
+impl<'a> Future for CloseFuture<'a> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut inner = self.socket.reactor.borrow_mut();
+        let socket = inner.sockets.get_mut::<tcp::Socket>(self.socket.handle);
+
+        // Check if we've reached a terminal state
+        match socket.state() {
+            // Fully closed - done!
+            State::Closed | State::TimeWait => Poll::Ready(()),
+            // Still closing - register waker and wait
             _ => {
                 socket.register_send_waker(cx.waker());
                 Poll::Pending

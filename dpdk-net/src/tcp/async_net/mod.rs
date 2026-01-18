@@ -5,82 +5,82 @@
 //!
 //! # Architecture
 //!
+//! ## Tokio Integration
+//!
+//! This module integrates with tokio's single-threaded runtime. The user must:
+//! 1. Create a tokio `current_thread` runtime
+//! 2. Spawn the reactor's `run()` method as a background task
+//! 3. Use `TcpStream` and `TcpListener` normally in async code
+//!
 //! ## DPDK is Poll-Based
 //!
-//! Unlike interrupt-driven systems (tokio with epoll, embassy with interrupts),
-//! DPDK requires continuous polling - there are no interrupts to notify us
-//! when packets arrive. This means we must always poll DPDK for packets.
+//! Unlike interrupt-driven systems (tokio with epoll), DPDK requires continuous
+//! polling - there are no interrupts to notify us when packets arrive.
+//! The `Reactor::run()` method polls DPDK in a loop.
 //!
-//! ## How Wakers Work Here
+//! ## How Wakers Work
 //!
-//! Despite DPDK's poll-based nature, we still use wakers effectively:
-//!
-//! 1. **Reactor polls DPDK + smoltcp** continuously (required for packet I/O)
+//! 1. **Reactor polls DPDK + smoltcp** continuously in a background task
 //! 2. **Socket futures register wakers** with smoltcp when they would block
 //! 3. **smoltcp wakes those wakers** when socket state changes during poll
-//! 4. **Executor only polls futures** when their waker was triggered
+//! 4. **Tokio schedules those tasks** to run
 //!
-//! This means we always poll DPDK, but we avoid redundant future polls
-//! when sockets haven't changed state.
+//! # Example
 //!
-//! ## Comparison with Embassy
+//! ```no_run
+//! use dpdk_net::tcp::{DpdkDeviceWithPool, Reactor, TcpListener, TcpStream};
+//! use smoltcp::iface::Interface;
+//! use smoltcp::wire::IpAddress;
+//! use tokio::runtime::Builder;
 //!
-//! Embassy's architecture is similar but interrupt-driven:
-//! - `Runner::run()` is a task that polls smoltcp when woken
-//! - Socket operations call `waker.wake()` to trigger a poll
-//! - Embedded network drivers can use interrupts to wake the runner
+//! fn example(device: DpdkDeviceWithPool, iface: Interface) {
+//!     // Create single-threaded tokio runtime
+//!     let rt = Builder::new_current_thread().enable_all().build().unwrap();
 //!
-//! Our architecture is poll-driven:
-//! - `block_on()` continuously polls DPDK (no interrupts available)
-//! - smoltcp wakes socket wakers during poll when state changes
-//! - Futures are only polled when their waker was triggered
+//!     rt.block_on(async {
+//!         // Create reactor with DPDK device and smoltcp interface
+//!         let reactor = Reactor::new(device, iface);
+//!         let handle = reactor.handle();
 //!
-/// # Example
-///
-/// ```no_run
-/// use dpdk_net::tcp::{DpdkDeviceWithPool, Reactor, TcpListener, TcpStream};
-/// use smoltcp::iface::Interface;
-/// use smoltcp::wire::IpAddress;
-///
-/// fn example(device: DpdkDeviceWithPool, iface: Interface) {
-///     // Create reactor with DPDK device and smoltcp interface
-///     let reactor = Reactor::new(device, iface);
-///     let handle = reactor.handle();
-///
-///     // Create a listening socket (like std::net::TcpListener::bind)
-///     let mut listener = TcpListener::bind(&handle, 8080, 4096, 4096)
-///         .expect("bind failed");
-///
-///     // Run async code with the reactor
-///     reactor.block_on(async {
-///         // Accept a connection (like std::net::TcpListener::accept)
-///         // The listener remains valid and can accept more connections
-///         let stream = listener.accept().await.expect("accept failed");
-///
-///         // Echo received data
-///         let mut buf = [0u8; 1024];
-///         let n = stream.recv(&mut buf).await.expect("recv failed");
-///         stream.send(&buf[..n]).await.expect("send failed");
-///     });
-/// }
-/// ```
+//!         // Spawn the reactor polling task (runs forever)
+//!         tokio::task::spawn_local(async move {
+//!             reactor.run().await;
+//!         });
+//!
+//!         // Create a listening socket
+//!         let mut listener = TcpListener::bind(&handle, 8080, 4096, 4096)
+//!             .expect("bind failed");
+//!
+//!         // Accept and handle connections
+//!         let stream = listener.accept().await.expect("accept failed");
+//!
+//!         let mut buf = [0u8; 1024];
+//!         let n = stream.recv(&mut buf).await.expect("recv failed");
+//!         stream.send(&buf[..n]).await.expect("send failed");
+//!     });
+//! }
+//! ```
+
 mod socket;
-mod waker;
 
 pub use socket::{
-    AcceptFuture, TcpListener, TcpRecvFuture, TcpSendFuture, TcpStream, WaitConnectedFuture,
+    AcceptFuture, CloseFuture, TcpListener, TcpRecvFuture, TcpSendFuture, TcpStream,
+    WaitConnectedFuture,
 };
-pub use waker::ReactorWaker;
 
 // Re-export smoltcp error types for convenience
 pub use smoltcp::socket::tcp::{ConnectError, ListenError};
 
 use super::DpdkDeviceWithPool;
-use smoltcp::iface::{Interface, PollResult, SocketSet};
+use smoltcp::iface::{Interface, PollIngressSingleResult, SocketSet};
 use smoltcp::phy::Device;
 use smoltcp::time::Instant;
 use std::cell::RefCell;
 use std::rc::Rc;
+
+/// Default number of packets to process before yielding to other tasks.
+/// This balances responsiveness with throughput.
+const DEFAULT_INGRESS_BATCH_SIZE: usize = 32;
 
 /// Shared state for the async reactor
 ///
@@ -96,22 +96,33 @@ pub struct ReactorInner<D: Device> {
 }
 
 impl<D: Device> ReactorInner<D> {
-    /// Poll smoltcp - this is a separate method to work around borrow checker
-    /// by destructuring self
-    fn poll_smoltcp(&mut self, timestamp: Instant) -> PollResult {
-        // By destructuring, we get separate mutable borrows
+    /// Process one incoming packet (bounded work).
+    ///
+    /// Returns whether a packet was processed and whether socket state changed.
+    fn poll_ingress_single(&mut self, timestamp: Instant) -> PollIngressSingleResult {
         let ReactorInner {
             device,
             iface,
             sockets,
         } = self;
-        iface.poll(timestamp, device, sockets)
+        iface.poll_ingress_single(timestamp, device, sockets)
+    }
+
+    /// Transmit queued packets (bounded work).
+    fn poll_egress(&mut self, timestamp: Instant) {
+        let ReactorInner {
+            device,
+            iface,
+            sockets,
+        } = self;
+        iface.poll_egress(timestamp, device, sockets);
     }
 }
 
 /// The async reactor that drives DPDK + smoltcp
 ///
 /// This must be polled repeatedly to make progress on network I/O.
+/// Use with tokio's single-threaded runtime (`current_thread`).
 pub struct Reactor<D: Device> {
     inner: Rc<RefCell<ReactorInner<D>>>,
 }
@@ -136,56 +147,83 @@ impl Reactor<DpdkDeviceWithPool> {
     }
 
     /// Poll the reactor once
+    /// Run the reactor forever, polling DPDK continuously with bounded work.
     ///
-    /// This polls DPDK for packets, runs smoltcp, and wakes any waiting tasks.
-    /// smoltcp automatically wakes registered wakers when socket state changes.
-    /// Returns true if any socket state changed.
-    pub fn poll(&self) -> bool {
-        let mut inner = self.inner.borrow_mut();
-        let timestamp = Instant::now();
-
-        // Poll smoltcp - this processes packets and updates socket states
-        // smoltcp will wake registered wakers when sockets can make progress
-        let poll_result = inner.poll_smoltcp(timestamp);
-
-        matches!(poll_result, PollResult::SocketStateChanged)
+    /// This should be spawned as a background task using `tokio::task::spawn_local`.
+    /// It polls DPDK in a loop, yielding to tokio periodically to allow
+    /// other tasks to run.
+    ///
+    /// To avoid DoS from packet floods, this uses `poll_ingress_single()` to process
+    /// packets in batches, yielding between batches. This ensures that even under
+    /// heavy load, other async tasks get a chance to run.
+    ///
+    /// Uses the default batch size of 32 packets. For custom batch sizes, use
+    /// [`run_with_batch_size`](Self::run_with_batch_size).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use dpdk_net::tcp::{DpdkDeviceWithPool, Reactor};
+    /// # use smoltcp::iface::Interface;
+    /// # async fn example(device: DpdkDeviceWithPool, iface: Interface) {
+    /// let reactor = Reactor::new(device, iface);
+    /// let handle = reactor.handle();
+    ///
+    /// // Spawn reactor as background task
+    /// tokio::task::spawn_local(async move {
+    ///     reactor.run().await;
+    /// });
+    ///
+    /// // Now use handle to create sockets...
+    /// # }
+    /// ```
+    pub async fn run(self) -> ! {
+        self.run_with_batch_size(DEFAULT_INGRESS_BATCH_SIZE).await
     }
 
-    /// Run the reactor until the given future completes
+    /// Run the reactor with a custom ingress batch size.
     ///
-    /// This is a single-threaded executor that polls DPDK continuously
-    /// (since DPDK is poll-based) but only polls the future when:
-    /// 1. A waker is triggered (socket state changed), or
-    /// 2. The reactor processed packets
+    /// `batch_size` controls how many packets are processed before yielding
+    /// to other tasks. Higher values increase throughput but reduce responsiveness.
+    /// Lower values improve latency for other tasks but add yield overhead.
     ///
-    /// This is more efficient than blindly polling the future every iteration.
-    pub fn block_on<F: std::future::Future>(&self, mut future: F) -> F::Output {
-        use std::pin::Pin;
-        use std::task::{Context, Poll};
-
-        // Create a waker that tracks when tasks are ready
-        let (reactor_waker, waker) = ReactorWaker::new();
-        let mut cx = Context::from_waker(&waker);
-
-        // Pin the future on the stack
-        let mut future = unsafe { Pin::new_unchecked(&mut future) };
-
+    /// Recommended values:
+    /// - 16-32: Good balance for mixed workloads
+    /// - 64-128: High-throughput scenarios
+    /// - 1-8: When latency for other tasks is critical
+    pub async fn run_with_batch_size(self, batch_size: usize) -> ! {
         loop {
-            // Only poll the future if a waker was triggered
-            if reactor_waker.take_woken()
-                && let Poll::Ready(result) = future.as_mut().poll(&mut cx)
-            {
-                return result;
+            let timestamp = Instant::now();
+            let mut packets_processed = 0;
+
+            // Process ingress in batches, yielding between batches
+            loop {
+                let result = {
+                    let mut inner = self.inner.borrow_mut();
+                    inner.poll_ingress_single(timestamp)
+                };
+
+                match result {
+                    PollIngressSingleResult::None => break,
+                    _ => {
+                        packets_processed += 1;
+                        if packets_processed >= batch_size {
+                            // Yield after processing a batch
+                            tokio::task::yield_now().await;
+                            packets_processed = 0;
+                        }
+                    }
+                }
             }
 
-            // Poll the reactor to make progress on I/O
-            // This is required because DPDK has no interrupts - we must poll for packets
-            // smoltcp will wake our wakers when socket states change
-            let _state_changed = self.poll();
+            // Process egress (bounded work - just transmits queued packets)
+            {
+                let mut inner = self.inner.borrow_mut();
+                inner.poll_egress(timestamp);
+            }
 
-            // Small yield to avoid burning CPU when idle
-            // In production, you might want to remove this for lowest latency
-            std::hint::spin_loop();
+            // Yield even when no packets, to avoid busy spinning
+            tokio::task::yield_now().await;
         }
     }
 }
