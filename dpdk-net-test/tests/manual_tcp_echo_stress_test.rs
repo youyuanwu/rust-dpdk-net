@@ -7,7 +7,7 @@
 //! across tests within the same process.
 
 use dpdk_net_test::dpdk_test::DpdkTestContextBuilder;
-use dpdk_net_test::tcp_echo::{EchoServer, SocketConfig, run_stress_test};
+use dpdk_net_test::manual::tcp_echo::{EchoServer, SocketConfig, run_stress_test};
 use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};

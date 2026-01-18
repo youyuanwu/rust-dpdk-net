@@ -1,14 +1,14 @@
 [package]
 name = "dpdk-net-test"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 publish = false
 
 [dependencies]
 ctrlc.workspace = true
 smoltcp.workspace = true
 arrayvec.workspace = true
-nix.workspace = true
+nix = { workspace = true, features = ["net"] }
 dpdk-net.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "sync"] }
 hyper = { workspace = true }

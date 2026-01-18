@@ -6,11 +6,11 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::time::Duration;
 
+use super::tcp_echo::{EchoClient, EchoServer, SocketConfig, run_echo_test};
 use crate::dpdk_test::{
     DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DEFAULT_MTU, DpdkDeviceWithPool,
     DpdkTestContext, DpdkTestContextBuilder,
 };
-use crate::tcp_echo::{EchoClient, EchoServer, SocketConfig, run_echo_test};
 
 /// Get PCI address for a network interface
 pub fn get_pci_addr(interface: &str) -> Option<String> {

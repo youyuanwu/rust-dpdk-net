@@ -1,7 +1,13 @@
 [package]
 name = "dpdk-net"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+documentation.workspace = true
+repository.workspace = true
+description = "DPDK networking (with tokio)"
+readme = "../README.md"
 
 [features]
 default = ["tokio"]
@@ -11,5 +17,5 @@ tokio = ["dep:tokio"]
 smoltcp.workspace = true
 arrayvec.workspace = true
 nix.workspace = true
-tokio = { workspace = true, features = ["rt"], optional = true }
+tokio = { workspace = true, default-features = false,features = ["rt"], optional = true }
 dpdk-net-sys.workspace = true

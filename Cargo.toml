@@ -4,14 +4,19 @@ members = [
   "dpdk-net", "dpdk-net-sys",
   "dpdk-net-test",
 ]
+package.edition = "2024"
+package.authors = [ "youyuanwu@outlook.com" ]
+package.documentation = "https://github.com/youyuanwu/rust-dpdk-net"
+package.repository = "https://github.com/youyuanwu/rust-dpdk-net"
+package.license = "MIT"
 
 [workspace.dependencies]
 ctrlc = "3"
 smoltcp = { version = "0.12", features = ["async"] }
 arrayvec = "0.7"
 serial_test = "3"
-nix = { version = "0.30", features = ["net"] }
-tokio = "1"
+nix = { version = "0.30", features = [] }
+tokio = { version = "1", default-features = false, features = [] }
 hyper = { version = "1", features = ["http1", "http2", "server", "client"] }
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
@@ -21,6 +26,6 @@ bindgen = "0.72"
 cc = "1.0"
 
 # crate in this workspace
-dpdk-net = { path = "dpdk-net" }
-dpdk-net-sys = { path = "dpdk-net-sys" }
+dpdk-net = { path = "dpdk-net", version = "0.1.0" }
+dpdk-net-sys = { path = "dpdk-net-sys", version = "0.1.0" }
 dpdk-net-test = { path = "dpdk-net-test" }

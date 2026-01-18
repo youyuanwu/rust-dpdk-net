@@ -1,8 +1,5 @@
-pub mod tcp;
+pub mod manual;
 pub mod udp;
-
-pub mod echo_server;
-pub mod tcp_echo;
 
 pub mod dpdk_test;
 

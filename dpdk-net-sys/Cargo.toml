@@ -1,7 +1,14 @@
 [package]
 name = "dpdk-net-sys"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+documentation.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "DPDK ffi for dpdk-net"
+include = ["build.rs", "include/**", "src/**", "README.md", "LICENSE"]
 
 [dependencies]
 

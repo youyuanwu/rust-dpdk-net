@@ -5,7 +5,7 @@
 //!
 //! Uses `tcp_echo::EchoServer` internally for the echo logic.
 
-use crate::tcp_echo::{EchoServer, SocketConfig};
+use super::tcp_echo::{EchoServer, SocketConfig};
 use smoltcp::iface::{Interface, SocketSet};
 use smoltcp::phy::Device;
 use smoltcp::socket::tcp::State;
