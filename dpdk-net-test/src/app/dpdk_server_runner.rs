@@ -38,7 +38,7 @@ use dpdk_net::api::rte::eth::{EthConf, EthDev, EthDevBuilder, RxQueueConf, TxQue
 use dpdk_net::api::rte::pktmbuf::{MemPool, MemPoolConfig};
 use dpdk_net::api::rte::queue::{RxQueue, TxQueue};
 use dpdk_net::api::rte::thread::ThreadRegistration;
-use dpdk_net::tcp::{DpdkDeviceWithPool, Reactor, TcpListener};
+use dpdk_net::tcp::{DpdkDeviceWithPool, Reactor, SharedArpCache, TcpListener};
 
 use smoltcp::iface::{Config, Interface};
 use smoltcp::time::Instant;
@@ -244,22 +244,6 @@ impl DpdkServerRunner {
         let mac = eth_dev.mac_addr().expect("Failed to get MAC address");
         let mac_addr = EthernetAddress(mac.addr_bytes);
 
-        // Lookup gateway MAC from kernel neighbor cache for ARP pre-population
-        let gateway_str = format!("{}", gateway);
-        let gateway_mac = crate::util::get_neighbor_mac(&gateway_str);
-        if let Some(ref gw_mac) = gateway_mac {
-            info!(
-                "Gateway MAC from kernel: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-                gw_mac[0], gw_mac[1], gw_mac[2], gw_mac[3], gw_mac[4], gw_mac[5]
-            );
-        } else {
-            warn!(
-                gateway = %gateway,
-                "Could not find gateway in neighbor cache. \
-                 Multi-queue mode may have ARP issues. Try 'ping -c1 <gateway>' first."
-            );
-        }
-
         self.print_interface_info(ip_addr, mac_addr, gateway);
 
         // Setup Ctrl+C handler
@@ -276,6 +260,16 @@ impl DpdkServerRunner {
         // Wrap factory in Arc for sharing across threads
         let factory = Arc::new(server_factory);
 
+        // Create shared ARP cache for multi-queue setups
+        // Queue 0 receives all ARP replies (not matched by TCP RSS) and updates the cache
+        // Other queues read from the cache and inject ARP packets into their smoltcp instance
+        let shared_arp_cache = if num_queues > 1 {
+            info!("Multi-queue mode: using shared ARP cache (SPMC pattern)");
+            Some(SharedArpCache::new())
+        } else {
+            None
+        };
+
         // Spawn worker threads
         let handles = self.spawn_workers(
             num_queues,
@@ -284,7 +278,7 @@ impl DpdkServerRunner {
             mac_addr,
             ip_addr,
             gateway,
-            gateway_mac,
+            shared_arp_cache,
             factory,
         );
 
@@ -313,7 +307,7 @@ impl DpdkServerRunner {
         mac_addr: EthernetAddress,
         ip_addr: Ipv4Address,
         gateway: Ipv4Address,
-        gateway_mac: Option<[u8; 6]>,
+        shared_arp_cache: Option<SharedArpCache>,
         factory: Arc<F>,
     ) -> Vec<thread::JoinHandle<()>>
     where
@@ -326,6 +320,7 @@ impl DpdkServerRunner {
             let cancel = cancel.clone();
             let mempool = mempool.clone();
             let factory = factory.clone();
+            let shared_arp_cache = shared_arp_cache.clone();
             let port = self.port;
             let tcp_rx = self.tcp_rx_buffer;
             let tcp_tx = self.tcp_tx_buffer;
@@ -344,10 +339,26 @@ impl DpdkServerRunner {
                     let rxq = RxQueue::new(0, queue_id as u16);
                     let txq = TxQueue::new(0, queue_id as u16);
 
-                    // Create DPDK device
+                    // Create DPDK device with shared ARP cache support
                     let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
                     let mut device =
                         DpdkDeviceWithPool::new(rxq, txq, mempool, DEFAULT_MTU, mbuf_capacity);
+
+                    // Enable shared ARP cache for multi-queue setups
+                    if let Some(cache) = shared_arp_cache {
+                        let octets = ip_addr.octets();
+                        device = device.with_shared_arp_cache(
+                            queue_id as u16,
+                            cache,
+                            mac_addr.0,
+                            std::net::Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3]),
+                        );
+                        if queue_id == 0 {
+                            info!("Queue 0 will update shared ARP cache (SPMC producer)");
+                        } else {
+                            debug!(queue_id, "Using shared ARP cache (SPMC consumer)");
+                        }
+                    }
 
                     // Configure smoltcp interface
                     let config = Config::new(mac_addr.into());
@@ -361,29 +372,6 @@ impl DpdkServerRunner {
                             .unwrap();
                     });
                     iface.routes_mut().add_default_ipv4_route(gateway).unwrap();
-
-                    // Inject ARP reply to pre-populate neighbor cache
-                    // This is needed because with RSS, ARP replies only go to one queue,
-                    // but each queue has its own smoltcp interface with its own ARP cache.
-                    if let Some(gw_mac) = gateway_mac {
-                        let arp_packet = crate::util::build_arp_reply(
-                            mac_addr.0,
-                            ip_addr.octets(),
-                            gw_mac,
-                            gateway.octets(),
-                        );
-                        if device.inject_rx_packet(&arp_packet) {
-                            debug!(queue_id, "Injected ARP reply for gateway");
-                            // Process the injected ARP packet to populate neighbor cache
-                            // Use empty socket set since we just want ARP processing
-                            iface.poll(
-                                Instant::now(),
-                                &mut device,
-                                &mut smoltcp::iface::SocketSet::new(vec![]),
-                            );
-                            debug!(queue_id, "Processed injected ARP packet");
-                        }
-                    }
 
                     // Create tokio runtime
                     let rt = Builder::new_current_thread().enable_all().build().unwrap();

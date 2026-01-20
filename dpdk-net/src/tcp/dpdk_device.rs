@@ -1,11 +1,14 @@
 use arrayvec::ArrayVec;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use crate::api::rte::mbuf::Mbuf;
 use crate::api::rte::pktmbuf::MemPool;
 use crate::api::rte::queue::{RxQueue, TxQueue};
+
+use super::arp_cache::{SharedArpCache, parse_arp_reply};
 
 /// Default headroom reserved at the front of each mbuf (matches RTE_PKTMBUF_HEADROOM)
 pub const DEFAULT_MBUF_HEADROOM: usize = 128;
@@ -40,6 +43,16 @@ pub struct DpdkDeviceWithPool {
     mtu: usize,
     #[allow(dead_code)] // Validated in constructor, stored for debugging/future use
     mbuf_capacity: usize,
+    /// Queue ID (0 = producer for shared ARP cache)
+    queue_id: u16,
+    /// Shared ARP cache for multi-queue setups (optional)
+    shared_arp_cache: Option<SharedArpCache>,
+    /// Our MAC address (for building ARP injection packets)
+    our_mac: Option<[u8; 6]>,
+    /// Our IP address (for building ARP injection packets)  
+    our_ip: Option<Ipv4Addr>,
+    /// IPs we've already injected from shared cache (avoid duplicates)
+    injected_ips: Vec<Ipv4Addr>,
 }
 
 impl DpdkDeviceWithPool {
@@ -77,7 +90,36 @@ impl DpdkDeviceWithPool {
             tx_batch: ArrayVec::new(),
             mtu,
             mbuf_capacity,
+            queue_id: 0,
+            shared_arp_cache: None,
+            our_mac: None,
+            our_ip: None,
+            injected_ips: Vec::new(),
         }
+    }
+
+    /// Configure shared ARP cache for multi-queue support.
+    ///
+    /// # Arguments
+    /// * `queue_id` - This queue's ID (queue 0 is the ARP producer)
+    /// * `cache` - Shared ARP cache
+    /// * `our_mac` - Our interface MAC address
+    /// * `our_ip` - Our interface IP address
+    ///
+    /// Queue 0 will update the cache when it receives ARP replies.
+    /// Other queues will check the cache and inject ARP packets into smoltcp.
+    pub fn with_shared_arp_cache(
+        mut self,
+        queue_id: u16,
+        cache: SharedArpCache,
+        our_mac: [u8; 6],
+        our_ip: Ipv4Addr,
+    ) -> Self {
+        self.queue_id = queue_id;
+        self.shared_arp_cache = Some(cache);
+        self.our_mac = Some(our_mac);
+        self.our_ip = Some(our_ip);
+        self
     }
 
     fn poll_rx(&mut self) {
@@ -87,6 +129,53 @@ impl DpdkDeviceWithPool {
         // Then poll from network if rx_batch has space
         if self.rx_batch.is_empty() {
             self.rxq.rx(&mut self.rx_batch);
+
+            // If we have a shared ARP cache, process received packets
+            if let Some(ref cache) = self.shared_arp_cache {
+                // Queue 0: scan for ARP replies and update shared cache
+                if self.queue_id == 0 {
+                    for mbuf in &self.rx_batch {
+                        if let Some((ip, mac)) = parse_arp_reply(mbuf.data()) {
+                            cache.insert(ip, mac);
+                        }
+                    }
+                }
+            }
+        }
+
+        // All queues: check shared cache for new entries to inject
+        self.inject_from_shared_cache();
+    }
+
+    /// Check shared ARP cache and inject any new entries into our rx path.
+    ///
+    /// This allows other queues to learn MACs that queue 0 discovered.
+    fn inject_from_shared_cache(&mut self) {
+        use super::arp_cache::build_arp_reply_for_injection;
+
+        let (Some(cache), Some(our_mac), Some(our_ip)) =
+            (&self.shared_arp_cache, self.our_mac, self.our_ip)
+        else {
+            return;
+        };
+
+        // Load the current cache snapshot (lock-free)
+        let cache_snapshot = cache.snapshot();
+
+        // Inject any IPs we haven't seen yet
+        for (&ip, &mac) in cache_snapshot.iter() {
+            if !self.injected_ips.contains(&ip) {
+                // Build and inject ARP reply packet
+                let arp_packet = build_arp_reply_for_injection(our_mac, our_ip, mac, ip);
+
+                if self.rx_batch.len() < self.rx_batch.capacity()
+                    && let Some(mut mbuf) = self.mempool.try_alloc()
+                    && mbuf.copy_from_slice(&arp_packet)
+                {
+                    self.rx_batch.push(mbuf);
+                    self.injected_ips.push(ip);
+                }
+            }
         }
     }
 

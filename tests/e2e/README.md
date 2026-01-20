@@ -31,6 +31,8 @@ pip install ansible
 ./run_tests.sh playbooks/hello_world.yml
 ./run_tests.sh playbooks/test_connectivity.yml
 
+./run_tests.sh playbooks/http_server_test.yml -e server_mode=tokio
+
 # Direct ansible-playbook usage
 ansible-playbook playbooks/hello_world.yml -v
 ```

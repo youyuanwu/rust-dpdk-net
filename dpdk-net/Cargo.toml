@@ -20,3 +20,4 @@ nix.workspace = true
 tokio = { workspace = true, default-features = false,features = ["rt"], optional = true }
 dpdk-net-sys.workspace = true
 tracing.workspace = true
+arc-swap.workspace = true

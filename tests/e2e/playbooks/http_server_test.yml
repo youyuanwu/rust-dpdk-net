@@ -1,5 +1,9 @@
 ---
 # HTTP Server Test - Run DPDK HTTP server on VM1, test from VM2
+# Usage:
+#   DPDK mode (default): ./run_tests.sh playbooks/http_server_test.yml
+#   Tokio mode: ./run_tests.sh playbooks/http_server_test.yml -e server_mode=tokio
+
 - name: Setup HTTP Server Test
   hosts: vm1
   become: true
@@ -78,11 +82,20 @@
     build_dir: "{{ project_root }}/build"
     http_server_remote: /home/azureuser/dpdk_http_server
     server_port: 8080
-    vm1_private_ip: "{{ hostvars['vm1'].private_ip2 | default(hostvars['vm1'].private_ip) }}"
+    # Server mode: 'dpdk' (default) or 'tokio' - passed via -e server_mode=tokio
+    _server_mode: "{{ server_mode | default('dpdk') }}"
+    # Server start options based on mode
+    server_start_opts: "{{ '--mode tokio' if (server_mode | default('dpdk')) == 'tokio' else '' }}"
+    # IP address: NIC2 for DPDK, NIC1 for Tokio
+    vm1_private_ip: "{{ hostvars['vm1'].private_ip if (server_mode | default('dpdk')) == 'tokio' else (hostvars['vm1'].private_ip2 | default(hostvars['vm1'].private_ip)) }}"
 
   tasks:
     - name: Run test with guaranteed cleanup
       block:
+        - name: Debug server mode variables
+          ansible.builtin.debug:
+            msg: "server_mode={{ server_mode | default('NOT SET') }}, _server_mode={{ _server_mode }}, server_start_opts='{{ server_start_opts }}', vm1_private_ip={{ vm1_private_ip }}"
+
         - name: Kill any existing dpdk_http_server
           ansible.builtin.shell: killall dpdk_http_server 2>/dev/null; exit 0
           changed_when: false
@@ -97,14 +110,14 @@
         - name: Start HTTP server in background
           ansible.builtin.shell: |
             cd /home/azureuser
-            nohup {{ http_server_remote }} > /tmp/dpdk_http_server.log 2>&1 &
+            nohup {{ http_server_remote }} {{ server_start_opts }} > /tmp/dpdk_http_server.log 2>&1 &
             echo $!
           register: server_pid
           changed_when: true
 
         - name: Display server PID
           ansible.builtin.debug:
-            msg: "HTTP server started with PID: {{ server_pid.stdout }}"
+            msg: "HTTP server started with PID: {{ server_pid.stdout }} (mode: {{ _server_mode }}, ip: {{ vm1_private_ip }})"
 
         - name: Wait for server to start
           ansible.builtin.pause:
@@ -156,7 +169,8 @@
         - name: Run wrk benchmark matrix (from VM2)
           ansible.builtin.shell: |
             echo "=== Benchmark: {{ item.threads }} threads, {{ item.connections }} connections ==="
-            wrk -t{{ item.threads }} -c{{ item.connections }} -d30s http://{{ vm1_private_ip }}:{{ server_port }}/ 2>&1 | tee /tmp/benchmarks/wrk_t{{ item.threads }}_c{{ item.connections }}.txt
+            wrk -t{{ item.threads }} -c{{ item.connections }} -d20s http://{{ vm1_private_ip }}:{{ server_port }}/ 2>&1 | tee /tmp/benchmarks/wrk_t{{ item.threads }}_c{{ item.connections }}.txt
+            sleep 1s
           register: wrk_results
           changed_when: false
           delegate_to: vm2
@@ -194,7 +208,7 @@
         - name: Fetch benchmark results to local build directory
           ansible.builtin.fetch:
             src: "/tmp/benchmarks/{{ item }}"
-            dest: "{{ build_dir }}/benchmarks/"
+            dest: "{{ build_dir }}/benchmarks/{{ _server_mode }}/"
             flat: true
           delegate_to: vm2
           loop:
@@ -229,6 +243,6 @@
         - name: Fetch server log to local build directory
           ansible.builtin.fetch:
             src: /tmp/dpdk_http_server.log
-            dest: "{{ build_dir }}/dpdk_http_server.log"
+            dest: "{{ build_dir }}/benchmarks/{{ _server_mode }}/http_server.log"
             flat: true
           ignore_errors: true
