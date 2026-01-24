@@ -143,9 +143,6 @@ impl DpdkDeviceWithPool {
                 }
             }
         }
-
-        // All queues: check shared cache for new entries to inject
-        self.inject_from_shared_cache();
     }
 
     /// Check shared ARP cache and inject any new entries into our rx path.
@@ -153,8 +150,11 @@ impl DpdkDeviceWithPool {
     /// This allows other queues to learn MACs that queue 0 discovered.
     /// Optimization: use version counter to detect any changes (including updates).
     /// Queue 0 skips injection - it receives ARP replies directly from network.
+    ///
+    /// This should be called from the reactor loop after sockets have processed
+    /// incoming packets (when rx_batch is likely empty/drained).
     #[inline(always)]
-    fn inject_from_shared_cache(&mut self) {
+    pub(crate) fn inject_from_shared_cache(&mut self) {
         use super::arp_cache::build_arp_reply_for_injection;
 
         // Queue 0 receives ARP replies directly, no injection needed
@@ -188,6 +188,11 @@ impl DpdkDeviceWithPool {
                 && mbuf.copy_from_slice(&arp_packet)
             {
                 self.rx_batch.push(mbuf);
+            } else {
+                // Injection failed (batch full, alloc failed, or copy failed).
+                // Return without updating cache version so we retry next iteration.
+                tracing::warn!("Failed to inject ARP entry for {}, will retry", ip);
+                return;
             }
         }
 

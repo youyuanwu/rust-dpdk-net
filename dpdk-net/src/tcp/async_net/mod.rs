@@ -290,6 +290,14 @@ impl Reactor<DpdkDeviceWithPool> {
                 inner.poll_egress(timestamp);
             }
 
+            // Inject ARP entries from shared cache after sockets processed RX.
+            // This is done here (not in poll_rx) because rx_batch should be
+            // drained after ingress processing, giving injection the best chance.
+            {
+                let mut inner = self.inner.borrow_mut();
+                inner.device.inject_from_shared_cache();
+            }
+
             // Clean up orphaned closing sockets that have completed their handshake
             {
                 let mut inner = self.inner.borrow_mut();
