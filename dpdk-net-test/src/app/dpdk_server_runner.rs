@@ -273,9 +273,22 @@ impl DpdkServerRunner {
         // Keep a reference for logging after shutdown
         let arp_cache_for_stats = shared_arp_cache.clone();
 
-        // Spawn worker threads
+        // Spawn worker threads for queues 1..num_queues
+        // Queue 0 will run on the current thread to save one thread
         let handles = self.spawn_workers(
             num_queues,
+            cancel.clone(),
+            mempool.clone(),
+            mac_addr,
+            ip_addr,
+            gateway,
+            shared_arp_cache.clone(),
+            factory.clone(),
+        );
+
+        // Run queue 0 on the current thread
+        Self::run_worker(
+            0,
             cancel,
             mempool.clone(),
             mac_addr,
@@ -283,9 +296,13 @@ impl DpdkServerRunner {
             gateway,
             shared_arp_cache,
             factory,
+            self.port,
+            self.tcp_rx_buffer,
+            self.tcp_tx_buffer,
+            self.backlog,
         );
 
-        // Wait for all threads
+        // Wait for all other threads
         for handle in handles {
             let _ = handle.join();
         }
@@ -311,6 +328,107 @@ impl DpdkServerRunner {
         drop(mempool);
     }
 
+    /// Run a single worker (queue). Can be called from any thread.
+    #[allow(clippy::too_many_arguments)]
+    fn run_worker<F, Fut>(
+        queue_id: usize,
+        cancel: CancellationToken,
+        mempool: Arc<MemPool>,
+        mac_addr: EthernetAddress,
+        ip_addr: Ipv4Address,
+        gateway: Ipv4Address,
+        shared_arp_cache: Option<SharedArpCache>,
+        factory: Arc<F>,
+        port: u16,
+        tcp_rx: usize,
+        tcp_tx: usize,
+        backlog: usize,
+    ) where
+        F: Fn(ServerContext) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = ()> + 'static,
+    {
+        // Register thread with DPDK
+        let _dpdk_registration =
+            ThreadRegistration::new().expect("Failed to register thread with DPDK");
+
+        // Pin this thread to CPU `queue_id` for optimal cache locality
+        // This mimics what DPDK EAL lcores do with pthread_setaffinity_np
+        if let Err(e) = set_cpu_affinity(queue_id) {
+            warn!(queue_id, error = %e, "Failed to set CPU affinity, performance may be degraded");
+        } else {
+            debug!(queue_id, cpu = queue_id, "Thread pinned to CPU");
+        }
+
+        debug!(queue_id, "Starting worker");
+
+        // Create queue handles
+        let rxq = RxQueue::new(0, queue_id as u16);
+        let txq = TxQueue::new(0, queue_id as u16);
+
+        // Create DPDK device with shared ARP cache support
+        let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
+        let mut device = DpdkDeviceWithPool::new(rxq, txq, mempool, DEFAULT_MTU, mbuf_capacity);
+
+        // Enable shared ARP cache for multi-queue setups
+        if let Some(cache) = shared_arp_cache {
+            let octets = ip_addr.octets();
+            device = device.with_shared_arp_cache(
+                queue_id as u16,
+                cache,
+                mac_addr.0,
+                std::net::Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3]),
+            );
+            if queue_id == 0 {
+                info!("Queue 0 will update shared ARP cache (SPMC producer)");
+            } else {
+                debug!(queue_id, "Using shared ARP cache (SPMC consumer)");
+            }
+        }
+
+        // Configure smoltcp interface
+        let config = Config::new(mac_addr.into());
+        let mut iface = Interface::new(config, &mut device, Instant::now());
+
+        // IMPORTANT: Set up IP address BEFORE processing ARP packets
+        // smoltcp's process_arp() checks if target_protocol_addr matches our IP
+        iface.update_ip_addrs(|ip_addrs| {
+            ip_addrs
+                .push(IpCidr::new(IpAddress::Ipv4(ip_addr), 24))
+                .unwrap();
+        });
+        iface.routes_mut().add_default_ipv4_route(gateway).unwrap();
+
+        // Create tokio runtime
+        let rt = Builder::new_current_thread().build().unwrap();
+        let local = tokio::task::LocalSet::new();
+
+        local.block_on(&rt, async {
+            // Create reactor
+            let reactor = Reactor::new(device, iface);
+            let handle = reactor.handle();
+
+            // Spawn reactor
+            tokio::task::spawn_local(async move {
+                reactor.run().await;
+            });
+
+            // Create listener
+            let listener = TcpListener::bind_with_backlog(&handle, port, tcp_rx, tcp_tx, backlog)
+                .expect("Failed to bind listener");
+
+            // Create and run server
+            let ctx = ServerContext {
+                listener,
+                cancel,
+                queue_id,
+                port,
+            };
+            factory(ctx).await;
+        });
+
+        debug!(queue_id, "Worker stopped");
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn spawn_workers<F, Fut>(
         &self,
@@ -327,9 +445,12 @@ impl DpdkServerRunner {
         F: Fn(ServerContext) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = ()> + 'static,
     {
-        let mut handles = Vec::with_capacity(num_queues);
+        // Skip queue 0 - it runs on the main thread
+        let spawned_queues = num_queues.saturating_sub(1);
+        let mut handles = Vec::with_capacity(spawned_queues);
 
-        for queue_id in 0..num_queues {
+        // Start from queue 1 (queue 0 runs on main thread)
+        for queue_id in 1..num_queues {
             let cancel = cancel.clone();
             let mempool = mempool.clone();
             let factory = factory.clone();
@@ -342,88 +463,20 @@ impl DpdkServerRunner {
             let handle = thread::Builder::new()
                 .name(format!("queue-{}", queue_id))
                 .spawn(move || {
-                    // Register thread with DPDK
-                    let _dpdk_registration =
-                        ThreadRegistration::new().expect("Failed to register thread with DPDK");
-
-                    // Pin this thread to CPU `queue_id` for optimal cache locality
-                    // This mimics what DPDK EAL lcores do with pthread_setaffinity_np
-                    if let Err(e) = set_cpu_affinity(queue_id) {
-                        warn!(queue_id, error = %e, "Failed to set CPU affinity, performance may be degraded");
-                    } else {
-                        debug!(queue_id, cpu = queue_id, "Thread pinned to CPU");
-                    }
-
-                    debug!(queue_id, "Starting worker thread");
-
-                    // Create queue handles
-                    let rxq = RxQueue::new(0, queue_id as u16);
-                    let txq = TxQueue::new(0, queue_id as u16);
-
-                    // Create DPDK device with shared ARP cache support
-                    let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
-                    let mut device =
-                        DpdkDeviceWithPool::new(rxq, txq, mempool, DEFAULT_MTU, mbuf_capacity);
-
-                    // Enable shared ARP cache for multi-queue setups
-                    if let Some(cache) = shared_arp_cache {
-                        let octets = ip_addr.octets();
-                        device = device.with_shared_arp_cache(
-                            queue_id as u16,
-                            cache,
-                            mac_addr.0,
-                            std::net::Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3]),
-                        );
-                        if queue_id == 0 {
-                            info!("Queue 0 will update shared ARP cache (SPMC producer)");
-                        } else {
-                            debug!(queue_id, "Using shared ARP cache (SPMC consumer)");
-                        }
-                    }
-
-                    // Configure smoltcp interface
-                    let config = Config::new(mac_addr.into());
-                    let mut iface = Interface::new(config, &mut device, Instant::now());
-
-                    // IMPORTANT: Set up IP address BEFORE processing ARP packets
-                    // smoltcp's process_arp() checks if target_protocol_addr matches our IP
-                    iface.update_ip_addrs(|ip_addrs| {
-                        ip_addrs
-                            .push(IpCidr::new(IpAddress::Ipv4(ip_addr), 24))
-                            .unwrap();
-                    });
-                    iface.routes_mut().add_default_ipv4_route(gateway).unwrap();
-
-                    // Create tokio runtime
-                    let rt = Builder::new_current_thread().build().unwrap();
-                    let local = tokio::task::LocalSet::new();
-
-                    local.block_on(&rt, async {
-                        // Create reactor
-                        let reactor = Reactor::new(device, iface);
-                        let handle = reactor.handle();
-
-                        // Spawn reactor
-                        tokio::task::spawn_local(async move {
-                            reactor.run().await;
-                        });
-
-                        // Create listener
-                        let listener =
-                            TcpListener::bind_with_backlog(&handle, port, tcp_rx, tcp_tx, backlog)
-                                .expect("Failed to bind listener");
-
-                        // Create and run server
-                        let ctx = ServerContext {
-                            listener,
-                            cancel,
-                            queue_id,
-                            port,
-                        };
-                        factory(ctx).await;
-                    });
-
-                    debug!(queue_id, "Worker thread stopped");
+                    Self::run_worker(
+                        queue_id,
+                        cancel,
+                        mempool,
+                        mac_addr,
+                        ip_addr,
+                        gateway,
+                        shared_arp_cache,
+                        factory,
+                        port,
+                        tcp_rx,
+                        tcp_tx,
+                        backlog,
+                    );
                 })
                 .expect("Failed to spawn worker thread");
 
