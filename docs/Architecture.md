@@ -27,7 +27,7 @@ This document describes the architecture of the `dpdk-net` crate, a Rust library
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    DPDK Device Adapter Layer                        │
-│         DpdkDeviceWithPool (implements smoltcp::phy::Device)        │
+│         DpdkDevice (implements smoltcp::phy::Device)        │
 │                   SharedArpCache (multi-queue)                      │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
@@ -92,7 +92,7 @@ The main library providing safe Rust abstractions over DPDK and smoltcp integrat
 
 | File | Purpose |
 |------|---------|
-| [dpdk_device.rs](../dpdk-net/src/tcp/dpdk_device.rs) | `DpdkDeviceWithPool` - smoltcp `Device` trait implementation |
+| [dpdk_device.rs](../dpdk-net/src/tcp/dpdk_device.rs) | `DpdkDevice` - smoltcp `Device` trait implementation |
 | [arp_cache.rs](../dpdk-net/src/tcp/arp_cache.rs) | `SharedArpCache` - Lock-free SPMC ARP cache for multi-queue |
 | [async_net/mod.rs](../dpdk-net/src/tcp/async_net/mod.rs) | `Reactor` - Async polling loop driving smoltcp |
 | [async_net/socket.rs](../dpdk-net/src/tcp/async_net/socket.rs) | `TcpStream`, `TcpListener` - Async TCP sockets |
@@ -114,12 +114,12 @@ Testing infrastructure and example servers.
 
 ## Core Components
 
-### DpdkDeviceWithPool
+### DpdkDevice
 
 The bridge between DPDK and smoltcp. Implements `smoltcp::phy::Device` to provide packet I/O.
 
 ```rust
-pub struct DpdkDeviceWithPool {
+pub struct DpdkDevice {
     rxq: RxQueue,              // DPDK receive queue
     txq: TxQueue,              // DPDK transmit queue
     mempool: Arc<MemPool>,     // Shared packet buffer pool
@@ -147,7 +147,7 @@ pub struct DpdkDeviceWithPool {
 The async polling loop that drives network I/O. Uses cooperative scheduling with tokio.
 
 ```rust
-impl Reactor<DpdkDeviceWithPool> {
+impl Reactor<DpdkDevice> {
     pub async fn run_with<R: Runtime>(self, batch_size: usize) -> ! {
         loop {
             let timestamp = Instant::now();
@@ -553,7 +553,7 @@ Meanwhile, Reactor::run() loop:
 1. DPDK RxQueue::rx() polls hardware
          │
          ▼
-2. DpdkDeviceWithPool buffers mbufs
+2. DpdkDevice buffers mbufs
          │
          ▼
 3. smoltcp Interface::poll_ingress_single()

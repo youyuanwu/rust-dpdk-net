@@ -32,14 +32,14 @@
 //! # Example
 //!
 //! ```no_run
-//! use dpdk_net::tcp::{DpdkDeviceWithPool, Reactor, TcpListener, TcpStream};
+//! use dpdk_net::tcp::{DpdkDevice, Reactor, TcpListener, TcpStream};
 //! use smoltcp::iface::Interface;
 //! use smoltcp::wire::IpAddress;
 //! use std::sync::atomic::AtomicBool;
 //! use std::sync::Arc;
 //! use tokio::runtime::Builder;
 //!
-//! fn example(device: DpdkDeviceWithPool, iface: Interface) {
+//! fn example(device: DpdkDevice, iface: Interface) {
 //!     // Create single-threaded tokio runtime
 //!     let rt = Builder::new_current_thread().enable_all().build().unwrap();
 //!
@@ -84,7 +84,7 @@ pub use tokio_compat::{TokioRuntime, TokioTcpStream};
 // Re-export smoltcp error types for convenience
 pub use smoltcp::socket::tcp::{ConnectError, ListenError};
 
-use super::DpdkDeviceWithPool;
+use super::DpdkDevice;
 use smoltcp::iface::{Interface, PollIngressSingleResult, SocketHandle, SocketSet};
 use smoltcp::phy::Device;
 use smoltcp::time::Instant;
@@ -166,9 +166,9 @@ pub struct Reactor<D: Device> {
     inner: Rc<RefCell<ReactorInner<D>>>,
 }
 
-impl Reactor<DpdkDeviceWithPool> {
+impl Reactor<DpdkDevice> {
     /// Create a new reactor with the given DPDK device and interface
-    pub fn new(device: DpdkDeviceWithPool, iface: Interface) -> Self {
+    pub fn new(device: DpdkDevice, iface: Interface) -> Self {
         Self {
             inner: Rc::new(RefCell::new(ReactorInner {
                 device,
@@ -201,11 +201,11 @@ impl Reactor<DpdkDeviceWithPool> {
     /// # Example
     ///
     /// ```no_run
-    /// # use dpdk_net::tcp::{DpdkDeviceWithPool, Reactor};
+    /// # use dpdk_net::tcp::{DpdkDevice, Reactor};
     /// # use smoltcp::iface::Interface;
     /// # use std::sync::atomic::AtomicBool;
     /// # use std::sync::Arc;
-    /// # async fn example(device: DpdkDeviceWithPool, iface: Interface) {
+    /// # async fn example(device: DpdkDevice, iface: Interface) {
     /// let reactor = Reactor::new(device, iface);
     /// let handle = reactor.handle();
     /// let cancel = Arc::new(AtomicBool::new(false));
@@ -258,12 +258,12 @@ impl Reactor<DpdkDeviceWithPool> {
     /// # Example
     ///
     /// ```no_run
-    /// # use dpdk_net::tcp::{DpdkDeviceWithPool, Reactor};
+    /// # use dpdk_net::tcp::{DpdkDevice, Reactor};
     /// # use dpdk_net::tcp::async_net::TokioRuntime;
     /// # use smoltcp::iface::Interface;
     /// # use std::sync::atomic::AtomicBool;
     /// # use std::sync::Arc;
-    /// # async fn example(device: DpdkDeviceWithPool, iface: Interface) {
+    /// # async fn example(device: DpdkDevice, iface: Interface) {
     /// let reactor = Reactor::new(device, iface);
     /// let cancel = Arc::new(AtomicBool::new(false));
     ///
@@ -326,5 +326,5 @@ impl Reactor<DpdkDeviceWithPool> {
 /// Handle to the reactor for creating sockets
 #[derive(Clone)]
 pub struct ReactorHandle {
-    pub(crate) inner: Rc<RefCell<ReactorInner<DpdkDeviceWithPool>>>,
+    pub(crate) inner: Rc<RefCell<ReactorInner<DpdkDevice>>>,
 }

@@ -1,6 +1,6 @@
 //! Async TCP socket implementation
 
-use super::super::DpdkDeviceWithPool;
+use super::super::DpdkDevice;
 use super::{ReactorHandle, ReactorInner};
 use smoltcp::iface::SocketHandle;
 use smoltcp::socket::tcp::{self, ConnectError, ListenError, RecvError, SendError, State};
@@ -20,7 +20,7 @@ use std::task::{Context, Poll};
 /// [`TcpStream::connect`], or by accepting a connection from a [`TcpListener`].
 pub struct TcpStream {
     pub(crate) handle: SocketHandle,
-    pub(crate) reactor: Rc<RefCell<ReactorInner<DpdkDeviceWithPool>>>,
+    pub(crate) reactor: Rc<RefCell<ReactorInner<DpdkDevice>>>,
 }
 
 impl TcpStream {
@@ -62,7 +62,7 @@ impl TcpStream {
     /// This is used internally by TcpListener::accept().
     pub(crate) fn from_handle(
         handle: SocketHandle,
-        reactor: Rc<RefCell<ReactorInner<DpdkDeviceWithPool>>>,
+        reactor: Rc<RefCell<ReactorInner<DpdkDevice>>>,
     ) -> Self {
         TcpStream { handle, reactor }
     }
@@ -182,7 +182,7 @@ impl Drop for TcpStream {
 pub struct TcpListener {
     /// Pool of sockets for handling concurrent connections
     handles: Vec<SocketHandle>,
-    reactor: Rc<RefCell<ReactorInner<DpdkDeviceWithPool>>>,
+    reactor: Rc<RefCell<ReactorInner<DpdkDevice>>>,
     port: u16,
     rx_buffer_size: usize,
     tx_buffer_size: usize,
@@ -234,7 +234,7 @@ impl TcpListener {
 
     /// Create a new listening socket and add it to the reactor
     fn create_listening_socket(
-        inner: &mut ReactorInner<DpdkDeviceWithPool>,
+        inner: &mut ReactorInner<DpdkDevice>,
         port: u16,
         rx_buffer_size: usize,
         tx_buffer_size: usize,

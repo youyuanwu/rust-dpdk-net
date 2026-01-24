@@ -34,7 +34,7 @@ impl phy::RxToken for DpdkRxToken {
 }
 
 /// More complete implementation with mempool access
-pub struct DpdkDeviceWithPool {
+pub struct DpdkDevice {
     rxq: RxQueue,
     txq: TxQueue,
     mempool: Arc<MemPool>,
@@ -55,7 +55,7 @@ pub struct DpdkDeviceWithPool {
     last_cache_version: usize,
 }
 
-impl DpdkDeviceWithPool {
+impl DpdkDevice {
     /// Create a new DPDK device for smoltcp.
     ///
     /// # Arguments
@@ -234,7 +234,7 @@ impl DpdkDeviceWithPool {
     }
 }
 
-impl Device for DpdkDeviceWithPool {
+impl Device for DpdkDevice {
     type RxToken<'a>
         = DpdkRxToken
     where

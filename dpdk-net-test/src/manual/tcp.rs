@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use super::tcp_echo::{EchoClient, EchoServer, SocketConfig, run_echo_test};
 use crate::dpdk_test::{
-    DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DEFAULT_MTU, DpdkDeviceWithPool,
-    DpdkTestContext, DpdkTestContextBuilder,
+    DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DEFAULT_MTU, DpdkDevice, DpdkTestContext,
+    DpdkTestContextBuilder,
 };
 
 /// Get PCI address for a network interface
@@ -122,7 +122,7 @@ pub fn get_default_gateway() -> Option<Ipv4Address> {
 
 /// Run TCP echo test using new wrappers
 fn run_tcp_echo_with_device(
-    device: &mut DpdkDeviceWithPool,
+    device: &mut DpdkDevice,
     ip_addr: Ipv4Address,
     gateway: Ipv4Address,
     mac_addr: EthernetAddress,
@@ -204,7 +204,7 @@ pub fn tcp_echo_test(use_hardware: bool) {
     println!("[Debug] Detected gateway: {:?}", gateway);
 
     // Build DPDK context using new wrappers
-    let (_ctx, mut device): (DpdkTestContext, DpdkDeviceWithPool) = if use_hardware {
+    let (_ctx, mut device): (DpdkTestContext, DpdkDevice) = if use_hardware {
         // Dynamically get PCI address for eth1
         let pci_addr = get_pci_addr(interface).expect("Failed to get PCI address for eth1");
 
@@ -237,7 +237,7 @@ pub fn tcp_echo_test(use_hardware: bool) {
         let rxq = RxQueue::new(0, 0);
         let txq = TxQueue::new(0, 0);
         let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
-        let device = DpdkDeviceWithPool::new(
+        let device = DpdkDevice::new(
             rxq,
             txq,
             std::sync::Arc::new(mempool),

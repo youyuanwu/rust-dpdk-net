@@ -4,15 +4,15 @@
 //! - `DpdkTestContext` - RAII struct holding EAL, EthDev
 //! - Builder for configuring test scenarios
 //!
-//! Uses `DpdkDeviceWithPool` from `dpdk_net::tcp` for the smoltcp Device implementation.
+//! Uses `DpdkDevice` from `dpdk_net::tcp` for the smoltcp Device implementation.
 
 use dpdk_net::api::rte::eal::{Eal, EalBuilder};
 use dpdk_net::api::rte::eth::{EthConf, EthDev, EthDevBuilder, RxQueueConf, TxQueueConf};
 use dpdk_net::api::rte::pktmbuf::{MemPool, MemPoolConfig};
 use dpdk_net::api::rte::queue::{RxQueue, TxQueue};
 
-// Re-export DpdkDeviceWithPool for convenience
-pub use dpdk_net::tcp::DpdkDeviceWithPool;
+// Re-export DpdkDevice for convenience
+pub use dpdk_net::tcp::DpdkDevice;
 
 /// Default headroom reserved at the front of each mbuf (matches RTE_PKTMBUF_HEADROOM)
 pub const DEFAULT_MBUF_HEADROOM: usize = 128;
@@ -166,10 +166,10 @@ impl DpdkTestContextBuilder {
         self
     }
 
-    /// Build the test context and DpdkDeviceWithPool.
+    /// Build the test context and DpdkDevice.
     ///
     /// Returns the context (which must be kept alive) and the device for smoltcp/Reactor.
-    pub fn build(self) -> Result<(DpdkTestContext, DpdkDeviceWithPool), dpdk_net::api::Errno> {
+    pub fn build(self) -> Result<(DpdkTestContext, DpdkDevice), dpdk_net::api::Errno> {
         // Initialize EAL
         let mut eal_builder = EalBuilder::new().no_huge().no_pci();
 
@@ -203,7 +203,7 @@ impl DpdkTestContextBuilder {
         let mbuf_capacity = self.data_room_size as usize - DEFAULT_MBUF_HEADROOM;
 
         // Create the device
-        let device = DpdkDeviceWithPool::new(
+        let device = DpdkDevice::new(
             rxq,
             txq,
             std::sync::Arc::new(mempool),
@@ -222,7 +222,7 @@ impl DpdkTestContextBuilder {
 /// Creates a DPDK context with a virtual ring device for loopback testing.
 pub fn create_loopback_test_setup(
     mempool_name: &str,
-) -> Result<(DpdkTestContext, DpdkDeviceWithPool), dpdk_net::api::Errno> {
+) -> Result<(DpdkTestContext, DpdkDevice), dpdk_net::api::Errno> {
     DpdkTestContextBuilder::new()
         .vdev("net_ring0")
         .mempool_name(mempool_name)

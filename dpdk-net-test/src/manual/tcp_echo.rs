@@ -7,14 +7,14 @@
 //!
 //! ```no_run
 //! use dpdk_net_test::manual::tcp_echo::{EchoServer, EchoClient, SocketConfig, run_echo_test};
-//! use dpdk_net::tcp::DpdkDeviceWithPool;
+//! use dpdk_net::tcp::DpdkDevice;
 //! use smoltcp::iface::{Interface, SocketSet};
 //! use smoltcp::time::Instant;
 //! use smoltcp::wire::Ipv4Address;
 //! use std::time::Duration;
 //!
 //! fn example(
-//!     device: &mut DpdkDeviceWithPool,
+//!     device: &mut DpdkDevice,
 //!     iface: &mut Interface,
 //!     sockets: &mut SocketSet<'static>,
 //! ) {

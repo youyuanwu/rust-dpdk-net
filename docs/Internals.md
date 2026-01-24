@@ -58,7 +58,7 @@ We use a **Single Producer, Multi Consumer** lock-free cache:
 ### Implementation
 
 ```rust
-// In DpdkDeviceWithPool::poll_rx()
+// In DpdkDevice::poll_rx()
 
 // Queue 0: Update shared cache from received ARP replies
 if self.queue_id == 0 {
@@ -90,4 +90,4 @@ for (ip, mac) in snapshot.iter() {
 ### Files
 
 - `dpdk-net/src/tcp/arp_cache.rs` - SharedArpCache implementation
-- `dpdk-net/src/tcp/dpdk_device.rs` - Integration with DpdkDeviceWithPool
+- `dpdk-net/src/tcp/dpdk_device.rs` - Integration with DpdkDevice

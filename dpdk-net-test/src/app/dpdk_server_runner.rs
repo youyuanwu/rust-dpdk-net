@@ -38,7 +38,7 @@ use dpdk_net::api::rte::eth::{EthConf, EthDev, EthDevBuilder, RxQueueConf, TxQue
 use dpdk_net::api::rte::pktmbuf::{MemPool, MemPoolConfig};
 use dpdk_net::api::rte::queue::{RxQueue, TxQueue};
 use dpdk_net::api::rte::thread::{ThreadRegistration, set_cpu_affinity};
-use dpdk_net::tcp::{DpdkDeviceWithPool, Reactor, SharedArpCache, TcpListener};
+use dpdk_net::tcp::{DpdkDevice, Reactor, SharedArpCache, TcpListener};
 
 use smoltcp::iface::{Config, Interface};
 use smoltcp::time::Instant;
@@ -367,7 +367,7 @@ impl DpdkServerRunner {
 
         // Create DPDK device with shared ARP cache support
         let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
-        let mut device = DpdkDeviceWithPool::new(rxq, txq, mempool, DEFAULT_MTU, mbuf_capacity);
+        let mut device = DpdkDevice::new(rxq, txq, mempool, DEFAULT_MTU, mbuf_capacity);
 
         // Enable shared ARP cache for multi-queue setups
         if let Some(cache) = shared_arp_cache {
