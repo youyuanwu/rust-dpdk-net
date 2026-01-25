@@ -39,7 +39,7 @@ pub struct DpdkDevice {
     txq: TxQueue,
     mempool: Arc<MemPool>,
     rx_batch: ArrayVec<Mbuf, 64>,
-    tx_batch: ArrayVec<Mbuf, 64>,
+    tx_batch: ArrayVec<Mbuf, 256>,
     mtu: usize,
     #[allow(dead_code)] // Validated in constructor, stored for debugging/future use
     mbuf_capacity: usize,
@@ -151,10 +151,10 @@ impl DpdkDevice {
     /// Optimization: use version counter to detect any changes (including updates).
     /// Queue 0 skips injection - it receives ARP replies directly from network.
     ///
-    /// This should be called from the reactor loop after sockets have processed
-    /// incoming packets (when rx_batch is likely empty/drained).
+    /// Called from receive() after poll_rx to ensure injected packets get
+    /// high priority processing (pushed to back, popped first with FIFO).
     #[inline(always)]
-    pub(crate) fn inject_from_shared_cache(&mut self) {
+    fn inject_from_shared_cache(&mut self) {
         use super::arp_cache::build_arp_reply_for_injection;
 
         // Queue 0 receives ARP replies directly, no injection needed
@@ -199,10 +199,11 @@ impl DpdkDevice {
         self.last_cache_version = current_version;
     }
 
-    fn flush_tx(&mut self) {
-        // Try to send pending packets, but don't spin if TX ring is full.
-        // Remaining packets stay in tx_batch and will be retried next poll.
-        // This prevents TX pressure from blocking RX (which would cause packet drops).
+    /// Flush pending TX packets to the hardware.
+    ///
+    /// This tries to send packets from tx_batch but doesn't spin if the TX ring is full.
+    /// Remaining packets stay in tx_batch and will be retried on next call.
+    pub(crate) fn flush_tx(&mut self) {
         if !self.tx_batch.is_empty() {
             self.txq.tx(&mut self.tx_batch);
         }
@@ -247,6 +248,11 @@ impl Device for DpdkDevice {
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         self.poll_rx();
 
+        // Inject ARP entries after poll_rx (which may have reversed the batch).
+        // This ensures injected ARPs are at the back, processed first by pop() = high priority.
+        // Critical for queue 1+ to resolve gateway MAC quickly for SYN-ACKs.
+        self.inject_from_shared_cache();
+
         if let Some(mbuf) = self.rx_batch.pop() {
             let rx_token = DpdkRxToken { mbuf };
             let tx_token = DpdkTxTokenWithPool {
@@ -266,6 +272,9 @@ impl Device for DpdkDevice {
                 tx_batch: &mut self.tx_batch,
             })
         } else {
+            // TX batch is full - try to flush to hardware.
+            // With a 256-packet batch and 1024-descriptor TX ring, this should
+            // rarely fail unless under extreme load.
             self.flush_tx();
             if self.tx_batch.len() < self.tx_batch.capacity() {
                 Some(DpdkTxTokenWithPool {
@@ -273,6 +282,7 @@ impl Device for DpdkDevice {
                     tx_batch: &mut self.tx_batch,
                 })
             } else {
+                // Hardware TX ring is full - caller will have to wait
                 None
             }
         }
@@ -288,7 +298,7 @@ impl Device for DpdkDevice {
 
 pub struct DpdkTxTokenWithPool<'a> {
     mempool: &'a MemPool,
-    tx_batch: &'a mut ArrayVec<Mbuf, 64>,
+    tx_batch: &'a mut ArrayVec<Mbuf, 256>,
 }
 
 impl<'a> phy::TxToken for DpdkTxTokenWithPool<'a> {

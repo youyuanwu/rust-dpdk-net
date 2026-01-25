@@ -225,21 +225,13 @@ impl Reactor<DpdkDevice> {
                 inner.poll_egress(timestamp);
             }
 
-            // Inject ARP entries from shared cache after sockets processed RX.
-            // This is done here (not in poll_rx) because rx_batch should be
-            // drained after ingress processing, giving injection the best chance.
-            {
-                let mut inner = self.inner.borrow_mut();
-                inner.device.inject_from_shared_cache();
-            }
-
             // Clean up orphaned closing sockets that have completed their handshake
             {
                 let mut inner = self.inner.borrow_mut();
                 inner.cleanup_orphaned();
             }
 
-            // Always yield to let other async tasks run (accept handlers, recv futures, etc.)
+            // Yield to let other async tasks run (accept handlers, recv futures, etc.)
             // Without this, spawned tasks would starve during idle periods
             R::yield_now().await;
         }

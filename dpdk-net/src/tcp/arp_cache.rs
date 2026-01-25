@@ -85,8 +85,13 @@ impl SharedArpCache {
         // Load current map
         let current = self.inner.load();
 
-        // Check if already present with same value (avoid unnecessary copy)
+        // Check if already present with same value
+        // TODO: if number of queue is large, this is expensive.
         if current.get(&ip) == Some(&mac) {
+            // MAC unchanged, but still bump version so consumers re-inject.
+            // This is needed because smoltcp's internal neighbor cache expires
+            // independently (60s) and needs periodic ARP refreshes.
+            self.version.fetch_add(1, Ordering::Release);
             return;
         }
 

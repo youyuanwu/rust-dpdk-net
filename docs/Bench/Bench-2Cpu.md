@@ -1,16 +1,16 @@
 # Benchmark Comparison
 
-Generated: 2026-01-24T14:47:06.593134
+Generated: 2026-01-24T18:18:18.218766
 
 ## Summary
 
 | Mode | Connections | Requests/sec | MB/sec | p50 (μs) | p99 (μs) | Errors |
 |------|-------------|--------------|--------|----------|----------|--------|
-| dpdk | 10 | 89565 | 99.0 | 105 | 198 | 0 |
-| dpdk | 50 | 212373 | 234.9 | 236 | 351 | 0 |
-| dpdk | 100 | 207619 | 229.7 | 397 | 696 | 76 |
-| dpdk | 200 | 201788 | 223.4 | 750 | 1308 | 181 |
-| dpdk | 500 | 159286 | 176.4 | 2591 | 3769 | 463 |
+| dpdk | 10 | 82745 | 91.5 | 114 | 213 | 0 |
+| dpdk | 50 | 217384 | 240.5 | 229 | 343 | 0 |
+| dpdk | 100 | 217308 | 240.4 | 458 | 667 | 0 |
+| dpdk | 200 | 224914 | 249.0 | 911 | 1310 | 0 |
+| dpdk | 500 | 217973 | 241.3 | 1638 | 9783 | 0 |
 | tokio | 10 | 68373 | 75.6 | 140 | 306 | 0 |
 | tokio | 50 | 172421 | 190.7 | 281 | 465 | 0 |
 | tokio | 100 | 183371 | 202.9 | 545 | 802 | 0 |
@@ -34,8 +34,8 @@ config:
 xychart-beta
     title "Requests per Second by Connection Count"
     x-axis "Connections" [10, 50, 100, 200, 500]
-    y-axis "Requests/sec" 0 --> 233610
-    line "dpdk" [89564, 212373, 207618, 201787, 159285]
+    y-axis "Requests/sec" 0 --> 247405
+    line "dpdk" [82745, 217383, 217307, 224914, 217972]
     line "tokio" [68372, 172420, 183370, 183861, 180745]
     line "tokio-local" [74018, 177762, 184627, 180253, 174338]
 ```
@@ -55,8 +55,8 @@ config:
 xychart-beta
     title "MB per Second by Connection Count"
     x-axis "Connections" [10, 50, 100, 200, 500]
-    y-axis "MB/sec" 0 --> 258
-    line "dpdk" [99, 234, 229, 223, 176]
+    y-axis "MB/sec" 0 --> 273
+    line "dpdk" [91, 240, 240, 249, 241]
     line "tokio" [75, 190, 202, 203, 200]
     line "tokio-local" [81, 196, 204, 199, 193]
 ```
@@ -78,9 +78,9 @@ config:
 xychart-beta
     title "DPDK Throughput Improvement (%)"
     x-axis "Connections" [10, 50, 100, 200, 500]
-    y-axis "Improvement (%)" -21 --> 40
-    line "vs tokio" [30, 23, 13, 9, -11]
-    line "vs tokio-local" [21, 19, 12, 11, -8]
+    y-axis "Improvement (%)" 1 --> 36
+    line "vs tokio" [21, 26, 18, 22, 20]
+    line "vs tokio-local" [11, 22, 17, 24, 25]
 ```
 
 **Legend:** vs tokio (blue) | vs tokio-local (orange)
@@ -100,9 +100,9 @@ config:
 xychart-beta
     title "DPDK Bandwidth Improvement (%)"
     x-axis "Connections" [10, 50, 100, 200, 500]
-    y-axis "Improvement (%)" -21 --> 41
-    line "vs tokio" [31, 23, 13, 9, -11]
-    line "vs tokio-local" [21, 19, 12, 11, -8]
+    y-axis "Improvement (%)" 1 --> 36
+    line "vs tokio" [21, 26, 18, 22, 20]
+    line "vs tokio-local" [11, 22, 17, 24, 25]
 ```
 
 **Legend:** vs tokio (blue) | vs tokio-local (orange)
@@ -121,7 +121,7 @@ xychart-beta
     title "p50 Latency by Connection Count"
     x-axis "Connections" [10, 50, 100, 200, 500]
     y-axis "Latency (μs)" 0 --> 3416
-    line "dpdk" [105, 236, 397, 750, 2591]
+    line "dpdk" [114, 229, 458, 911, 1638]
     line "tokio" [140, 281, 545, 1111, 1929]
     line "tokio-local" [126, 274, 537, 1098, 2847]
 ```
@@ -142,7 +142,7 @@ xychart-beta
     title "p99 Latency by Connection Count"
     x-axis "Connections" [10, 50, 100, 200, 500]
     y-axis "Latency (μs)" 0 --> 13266
-    line "dpdk" [198, 351, 696, 1308, 3769]
+    line "dpdk" [213, 343, 667, 1310, 9783]
     line "tokio" [306, 465, 802, 1614, 11055]
     line "tokio-local" [279, 430, 699, 1349, 3301]
 ```
@@ -159,7 +159,7 @@ xychart-beta
 
 ```json
 {
-  "benchmark_time": "2026-01-24T22:05:49+00:00",
+  "benchmark_time": "2026-01-25T02:16:29+00:00",
   "results": [
     {
       "url": "http://10.0.0.5:8080/",
@@ -168,19 +168,19 @@ xychart-beta
       "mode": "raw",
       "worker_threads": 2,
       "timeout_ms": 5000,
-      "requests": 1791298,
+      "requests": 1654902,
       "errors": 0,
-      "gb_read": 1.93,
-      "requests_per_sec": 89564.9,
-      "mb_per_sec": 99.03,
+      "gb_read": 1.79,
+      "requests_per_sec": 82745.1,
+      "mb_per_sec": 91.48,
       "latency": {
-        "p50_us": 105,
-        "p75_us": 128,
-        "p90_us": 152,
-        "p99_us": 198,
-        "avg_us": 110,
-        "max_us": 2417,
-        "stdev_us": 30
+        "p50_us": 114,
+        "p75_us": 137,
+        "p90_us": 162,
+        "p99_us": 213,
+        "avg_us": 119,
+        "max_us": 35167,
+        "stdev_us": 65
       }
     },
     {
@@ -190,19 +190,19 @@ xychart-beta
       "mode": "raw",
       "worker_threads": 2,
       "timeout_ms": 5000,
-      "requests": 4247468,
+      "requests": 4347671,
       "errors": 0,
-      "gb_read": 4.59,
-      "requests_per_sec": 212373.4,
-      "mb_per_sec": 234.94,
+      "gb_read": 4.7,
+      "requests_per_sec": 217383.55,
+      "mb_per_sec": 240.48,
       "latency": {
-        "p50_us": 236,
-        "p75_us": 268,
-        "p90_us": 298,
-        "p99_us": 351,
-        "avg_us": 235,
-        "max_us": 5599,
-        "stdev_us": 62
+        "p50_us": 229,
+        "p75_us": 260,
+        "p90_us": 288,
+        "p99_us": 343,
+        "avg_us": 228,
+        "max_us": 9663,
+        "stdev_us": 57
       }
     },
     {
@@ -212,26 +212,19 @@ xychart-beta
       "mode": "raw",
       "worker_threads": 2,
       "timeout_ms": 5000,
-      "requests": 4152373,
-      "errors": 76,
-      "gb_read": 4.49,
-      "requests_per_sec": 207618.65,
-      "mb_per_sec": 229.69,
-      "error_samples": [
-        "timeout",
-        "timeout",
-        "timeout",
-        "timeout",
-        "timeout"
-      ],
+      "requests": 4346151,
+      "errors": 0,
+      "gb_read": 4.7,
+      "requests_per_sec": 217307.55,
+      "mb_per_sec": 240.42,
       "latency": {
-        "p50_us": 397,
-        "p75_us": 493,
-        "p90_us": 564,
-        "p99_us": 696,
-        "avg_us": 398,
-        "max_us": 7255,
-        "stdev_us": 136
+        "p50_us": 458,
+        "p75_us": 527,
+        "p90_us": 578,
+        "p99_us": 667,
+        "avg_us": 459,
+        "max_us": 161407,
+        "stdev_us": 551
       }
     },
     {
@@ -241,26 +234,19 @@ xychart-beta
       "mode": "raw",
       "worker_threads": 2,
       "timeout_ms": 5000,
-      "requests": 4035751,
-      "errors": 181,
-      "gb_read": 4.36,
-      "requests_per_sec": 201787.55,
-      "mb_per_sec": 223.42,
-      "error_samples": [
-        "connect timeout",
-        "connect timeout",
-        "connect timeout",
-        "connect timeout",
-        "connect timeout"
-      ],
+      "requests": 4498286,
+      "errors": 0,
+      "gb_read": 4.86,
+      "requests_per_sec": 224914.3,
+      "mb_per_sec": 249.03,
       "latency": {
-        "p50_us": 750,
-        "p75_us": 963,
-        "p90_us": 1121,
-        "p99_us": 1308,
-        "avg_us": 759,
-        "max_us": 10079,
-        "stdev_us": 257
+        "p50_us": 911,
+        "p75_us": 1041,
+        "p90_us": 1147,
+        "p99_us": 1310,
+        "avg_us": 887,
+        "max_us": 203775,
+        "stdev_us": 268
       }
     },
     {
@@ -270,26 +256,19 @@ xychart-beta
       "mode": "raw",
       "worker_threads": 2,
       "timeout_ms": 5000,
-      "requests": 3185711,
-      "errors": 463,
-      "gb_read": 3.44,
-      "requests_per_sec": 159285.55,
-      "mb_per_sec": 176.36,
-      "error_samples": [
-        "connect timeout",
-        "connect timeout",
-        "connect timeout",
-        "connect timeout",
-        "connect timeout"
-      ],
+      "requests": 4359454,
+      "errors": 0,
+      "gb_read": 4.71,
+      "requests_per_sec": 217972.7,
+      "mb_per_sec": 241.34,
       "latency": {
-        "p50_us": 2591,
-        "p75_us": 3143,
-        "p90_us": 3321,
-        "p99_us": 3769,
-        "avg_us": 2414,
-        "max_us": 28623,
-        "stdev_us": 817
+        "p50_us": 1638,
+        "p75_us": 2157,
+        "p90_us": 4883,
+        "p99_us": 9783,
+        "avg_us": 2289,
+        "max_us": 25007,
+        "stdev_us": 1906
       }
     }
   ]

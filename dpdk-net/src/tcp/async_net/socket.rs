@@ -377,10 +377,12 @@ impl<'a> Future for AcceptFuture<'a> {
                     return Poll::Ready(Err(ListenError::Unaddressable));
                 }
 
-                // Register wakers on all listening sockets and wait
+                // Register wakers on all listening sockets and wait.
+                // We use recv_waker because listening sockets transition to Established
+                // when they receive packets (SYN → SYN-ACK → ACK), not when sending.
                 for &handle in &this.listener.handles {
                     let socket = inner.sockets.get_mut::<tcp::Socket>(handle);
-                    socket.register_send_waker(cx.waker());
+                    socket.register_recv_waker(cx.waker());
                 }
 
                 Poll::Pending
