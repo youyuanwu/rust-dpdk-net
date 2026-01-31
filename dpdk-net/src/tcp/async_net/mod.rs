@@ -73,6 +73,7 @@ mod runtime;
 mod socket;
 #[cfg(feature = "tokio")]
 pub mod tokio_compat;
+mod udp_socket;
 
 pub use reactor::{Reactor, ReactorHandle, ReactorInner};
 pub use runtime::Runtime;
@@ -82,6 +83,10 @@ pub use socket::{
 };
 #[cfg(feature = "tokio")]
 pub use tokio_compat::{TokioRuntime, TokioTcpStream};
+pub use udp_socket::{UdpRecvFuture, UdpSendFuture, UdpSocket};
 
 // Re-export smoltcp error types for convenience
 pub use smoltcp::socket::tcp::{ConnectError, ListenError};
+pub use smoltcp::socket::udp::{
+    BindError as UdpBindError, RecvError as UdpRecvError, SendError as UdpSendError, UdpMetadata,
+};

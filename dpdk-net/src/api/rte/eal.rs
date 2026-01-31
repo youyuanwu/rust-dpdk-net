@@ -293,8 +293,9 @@ impl EalBuilder {
 /// }
 /// ```
 pub struct Eal {
-    // PhantomData with *const () makes Eal !Send and !Sync
-    _marker: PhantomData<*const ()>,
+    // Unit type () is Send + Sync, so Eal is too.
+    // EAL is global state and DPDK functions are internally thread-safe.
+    _marker: PhantomData<()>,
 }
 
 impl Eal {

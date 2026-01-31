@@ -166,6 +166,20 @@ impl DpdkTestContextBuilder {
 
         Ok((context, device))
     }
+
+    /// Build only the EthDev and DpdkDevice, assuming EAL is already initialized.
+    ///
+    /// Use this when you have a global EAL and want to recreate devices per test.
+    /// Returns the EthDev and DpdkDevice (caller is responsible for cleanup).
+    pub fn build_device_only(self) -> Result<(EthDev, DpdkDevice), dpdk_net::api::Errno> {
+        // Build mempool and eth device using shared config
+        let (mempool, eth_dev) = self.eth_dev_config.clone().build()?;
+
+        // Create device for queue 0
+        let device = self.eth_dev_config.create_device(mempool, 0);
+
+        Ok((eth_dev, device))
+    }
 }
 
 /// Convenience function to create a simple loopback test setup.
