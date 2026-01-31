@@ -16,7 +16,7 @@ package.license = "MIT"
 arc-swap = "1.8"
 clap = { version = "4", features = ["derive"] }
 ctrlc = { version = "3", features = ["termination"] }
-smoltcp = { version = "0.12", features = ["async"] }
+smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ethernet", "proto-ipv4", "socket-tcp", "async"] }
 arrayvec = "0.7"
 serial_test = "3"
 nix = { version = "0.31", features = [] }
