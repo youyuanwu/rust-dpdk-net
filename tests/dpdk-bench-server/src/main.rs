@@ -57,6 +57,8 @@ enum ServerMode {
     TokioLocal,
     /// Thread-per-core kimojio + io_uring (Linux 5.15+)
     Kimojio,
+    /// Thread-per-core kimojio + io_uring with busy polling (Linux 5.15+)
+    KimojioPoll,
 }
 
 #[derive(Parser, Debug)]
@@ -223,7 +225,17 @@ fn main() {
                 port = args.port,
                 "Starting HTTP benchmark server"
             );
-            run_kimojio_thread_per_core_server(args.port, counter_handler_kimojio);
+            run_kimojio_thread_per_core_server(args.port, counter_handler_kimojio, false);
+        }
+        ServerMode::KimojioPoll => {
+            use dpdk_net_test::app::kimojio_server::run_kimojio_thread_per_core_server;
+
+            info!(
+                mode = "kimojio-poll",
+                port = args.port,
+                "Starting HTTP benchmark server with busy polling"
+            );
+            run_kimojio_thread_per_core_server(args.port, counter_handler_kimojio, true);
         }
     }
 }

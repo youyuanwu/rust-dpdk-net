@@ -5,7 +5,7 @@ var location = resourceGroup().location
 @description('SSH public key for VM access')
 param sshPublicKey string
 
-@description('VM size')
+@description('VM1 size')
 @allowed([
   'Standard_D2s_v5'
   'Standard_D4s_v5'
@@ -15,7 +15,19 @@ param sshPublicKey string
   'Standard_D48s_v5'
   'Standard_D64s_v5'
 ])
-param vmSize string = 'Standard_D2s_v5'
+param vm1Size string = 'Standard_D2s_v5'
+
+@description('VM2 size')
+@allowed([
+  'Standard_D2s_v5'
+  'Standard_D4s_v5'
+  'Standard_D8s_v5'
+  'Standard_D16s_v5'
+  'Standard_D32s_v5'
+  'Standard_D48s_v5'
+  'Standard_D64s_v5'
+])
+param vm2Size string = 'Standard_D2s_v5'
 
 @description('Number of VMs to deploy (1 or 2)')
 @allowed([1, 2])
@@ -167,7 +179,7 @@ module vm1 'modules/vm.bicep' = {
   params: {
     vmName: vm1Name
     location: location
-    vmSize: vmSize
+    vmSize: vm1Size
     sshPublicKey: sshPublicKey
     subnetId: subnet.id
     nsgId: nsg.id
@@ -185,7 +197,7 @@ module vm2 'modules/vm.bicep' = if (vmCount == 2) {
   params: {
     vmName: vm2Name
     location: location
-    vmSize: vmSize
+    vmSize: vm2Size
     sshPublicKey: sshPublicKey
     subnetId: subnet.id
     nsgId: nsg.id

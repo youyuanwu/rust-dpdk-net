@@ -5,6 +5,7 @@
 #   Tokio mode: ./run_tests.sh playbooks/http_server_test.yml -e server_mode=tokio
 #   Tokio-local mode: ./run_tests.sh playbooks/http_server_test.yml -e server_mode=tokio-local
 #   Kimojio mode: ./run_tests.sh playbooks/http_server_test.yml -e server_mode=kimojio
+#   Kimojio-poll mode: ./run_tests.sh playbooks/http_server_test.yml -e server_mode=kimojio-poll
 
 - name: Setup HTTP Server Test
   hosts: vm1
@@ -110,11 +111,13 @@
       --mode tokio-local
       {%- elif (server_mode | default('dpdk')) == 'kimojio' -%}
       --mode kimojio
+      {%- elif (server_mode | default('dpdk')) == 'kimojio-poll' -%}
+      --mode kimojio-poll
       {%- else -%}
       --backlog 200
       {%- endif -%}
     # IP address: NIC2 for DPDK, NIC1 for Tokio/Kimojio modes
-    vm1_private_ip: "{{ hostvars['vm1'].private_ip if (server_mode | default('dpdk')) in ['tokio', 'tokio-local', 'kimojio'] else (hostvars['vm1'].private_ip2 | default(hostvars['vm1'].private_ip)) }}"
+    vm1_private_ip: "{{ hostvars['vm1'].private_ip if (server_mode | default('dpdk')) in ['tokio', 'tokio-local', 'kimojio', 'kimojio-poll'] else (hostvars['vm1'].private_ip2 | default(hostvars['vm1'].private_ip)) }}"
 
   tasks:
     - name: Run test with guaranteed cleanup

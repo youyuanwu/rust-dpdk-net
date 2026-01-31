@@ -52,7 +52,8 @@ az deployment group create \
   --parameters sshPublicKey="$(cat ~/.ssh/id_rsa.pub)" \
                vmCount=2 \
                nicsPerVm=2 \
-               vmSize=Standard_D2s_v5
+               vm1Size=Standard_D2s_v5 \
+               vm2Size=Standard_D8s_v5
 ```
 
 ## Parameters
@@ -62,7 +63,8 @@ az deployment group create \
 | `sshPublicKey` | (required) | SSH public key for VM access |
 | `vmCount` | 1 | Number of VMs (1 or 2) |
 | `nicsPerVm` | 1 | NICs per VM (1 or 2, use 2 for DPDK) |
-| `vmSize` | Standard_D2s_v5 | VM size |
+| `vm1Size` | Standard_D2s_v5 | VM1 size |
+| `vm2Size` | Standard_D2s_v5 | VM2 size |
 | `enableAutoShutdown` | true | Auto-shutdown at 19:00 UTC |
 | `shutdownTime` | 1900 | Shutdown time (24h format) |
 

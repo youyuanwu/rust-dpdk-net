@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run HTTP server benchmark with all 4 server modes sequentially
+# Run HTTP server benchmark with all 5 server modes sequentially
 
 set -e
 
@@ -14,7 +14,7 @@ echo "=========================================="
 echo "Cleaning up previous benchmark output..."
 rm -rf "$SCRIPT_DIR/../../build/benchmarks"
 
-MODES=("dpdk" "tokio" "tokio-local" "kimojio")
+MODES=("dpdk" "tokio" "tokio-local" "kimojio" "kimojio-poll")
 
 for mode in "${MODES[@]}"; do
     echo ""

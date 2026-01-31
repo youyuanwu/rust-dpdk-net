@@ -620,13 +620,14 @@ pub async fn simple_echo_handler(req: Request<Bytes>) -> Response<Bytes> {
 ///         .unwrap()
 /// }
 ///
-/// run_kimojio_thread_per_core_server(8080, my_handler);
+/// run_kimojio_thread_per_core_server(8080, my_handler, false);
 /// ```
-pub fn run_kimojio_thread_per_core_server<F, Fut>(port: u16, handler: F)
+pub fn run_kimojio_thread_per_core_server<F, Fut>(port: u16, handler: F, busy_poll: bool)
 where
     F: Fn(Request<Bytes>) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = Response<Bytes>> + 'static,
 {
+    use kimojio::configuration::{BusyPoll, Configuration};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
@@ -636,8 +637,10 @@ where
         .unwrap_or(1);
 
     println!(
-        "[kimojio] Starting thread-per-core HTTP server on port {} with {} cores",
-        port, num_cores
+        "[kimojio] Starting thread-per-core HTTP server on port {} with {} cores{}",
+        port,
+        num_cores,
+        if busy_poll { " (busy polling)" } else { "" }
     );
 
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -659,10 +662,19 @@ where
                     );
                 }
 
+                // Configure busy polling if requested
+                let config = if busy_poll {
+                    Configuration::new().set_busy_poll(BusyPoll::Always)
+                } else {
+                    Configuration::new()
+                };
+
                 // Run the kimojio runtime with thread index (core_id)
-                let result = kimojio::run(core_id as u8, async move {
-                    run_kimojio_accept_loop(core_id, port, handler, shutdown).await
-                });
+                let result = kimojio::run_with_configuration(
+                    core_id as u8,
+                    async move { run_kimojio_accept_loop(core_id, port, handler, shutdown).await },
+                    config,
+                );
 
                 match result {
                     Some(Ok(Ok(()))) => println!("[kimojio] core={} Worker stopped", core_id),

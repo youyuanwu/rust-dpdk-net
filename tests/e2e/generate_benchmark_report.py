@@ -3,6 +3,7 @@
 Generate benchmark comparison Markdown with Mermaid charts.
 
 Reads summary.json from each mode directory and creates a comparison report.
+Modes are auto-detected from subdirectories containing summary.json.
 """
 
 import json
@@ -13,7 +14,31 @@ from datetime import datetime
 BENCHMARKS_DIR = Path(__file__).parent.parent.parent / "build" / "benchmarks"
 OUTPUT_FILE = BENCHMARKS_DIR / "BENCHMARK_COMPARISON.md"
 
-MODES = ["dpdk", "tokio", "tokio-local", "kimojio"]
+# Preferred order for display (modes not in this list appear at the end alphabetically)
+MODE_ORDER = ["dpdk", "tokio", "tokio-local", "kimojio", "kimojio-poll"]
+
+# Color palette for charts
+CHART_COLORS = ["#3366cc", "#ff9900", "#33cc33", "#9933ff", "#cc3366", "#33cccc", "#cc6633"]
+COLOR_NAMES = ["blue", "orange", "green", "purple", "pink", "cyan", "brown"]
+
+
+def discover_modes() -> list[str]:
+    """Discover available modes by scanning for directories with summary.json."""
+    if not BENCHMARKS_DIR.exists():
+        return []
+    
+    modes = []
+    for entry in BENCHMARKS_DIR.iterdir():
+        if entry.is_dir() and (entry / "summary.json").exists():
+            modes.append(entry.name)
+    
+    # Sort: known modes first in preferred order, then unknown modes alphabetically
+    def sort_key(mode):
+        if mode in MODE_ORDER:
+            return (0, MODE_ORDER.index(mode))
+        return (1, mode)
+    
+    return sorted(modes, key=sort_key)
 
 
 def load_summary(mode: str) -> dict | None:
@@ -30,11 +55,26 @@ def get_results_by_connections(summary: dict) -> dict:
     return {r["connections"]: r for r in summary["results"]}
 
 
+def get_chart_colors(num_modes: int) -> str:
+    """Get comma-separated color palette for the given number of modes."""
+    return ", ".join(CHART_COLORS[:num_modes])
+
+
+def add_legend(modes: list[str]) -> list[str]:
+    """Generate legend lines for the given modes."""
+    legend_items = [f"{m} ({COLOR_NAMES[i % len(COLOR_NAMES)]})" for i, m in enumerate(modes)]
+    return ["", "**Legend:** " + " | ".join(legend_items), ""]
+
+
 def generate_markdown() -> str:
     """Generate the comparison Markdown content."""
-    # Load all summaries
+    # Discover and load all summaries
+    modes = discover_modes()
+    if not modes:
+        return "# Benchmark Comparison\n\nNo benchmark data found.\n"
+    
     summaries = {}
-    for mode in MODES:
+    for mode in modes:
         summary = load_summary(mode)
         if summary:
             summaries[mode] = get_results_by_connections(summary)
@@ -47,11 +87,15 @@ def generate_markdown() -> str:
         set(c for results in summaries.values() for c in results.keys())
     )
 
+    chart_colors = get_chart_colors(len(modes))
+
     # Build markdown
     lines = [
         "# Benchmark Comparison",
         "",
         f"Generated: {datetime.now().isoformat()}",
+        "",
+        f"Modes tested: {', '.join(modes)}",
         "",
         "## Summary",
         "",
@@ -59,7 +103,7 @@ def generate_markdown() -> str:
         "|------|-------------|--------------|--------|----------|----------|--------|",
     ]
 
-    for mode in MODES:
+    for mode in modes:
         if mode not in summaries:
             continue
         for conn in all_connections:
@@ -72,10 +116,6 @@ def generate_markdown() -> str:
                 f"{lat.get('p50_us', 'N/A')} | {lat.get('p99_us', 'N/A')} | {r['errors']} |"
             )
 
-    # Color palette for charts - dpdk=blue, tokio=orange, tokio-local=green, kimojio=purple
-    CHART_COLORS = "#3366cc, #ff9900, #33cc33, #9933ff"
-    CHART_COLORS_3 = "#3366cc, #ff9900, #33cc33"  # For 3-line comparison charts
-
     # Throughput chart
     lines.extend([
         "",
@@ -86,7 +126,7 @@ def generate_markdown() -> str:
         "config:",
         "    themeVariables:",
         "        xyChart:",
-        f'            plotColorPalette: "{CHART_COLORS}"',
+        f'            plotColorPalette: "{chart_colors}"',
         "---",
         "xychart-beta",
         '    title "Requests per Second by Connection Count"',
@@ -102,7 +142,7 @@ def generate_markdown() -> str:
     y_max = int(max_rps * 1.1)
     lines.append(f'    y-axis "Requests/sec" 0 --> {y_max}')
 
-    for mode in MODES:
+    for mode in modes:
         if mode not in summaries:
             continue
         values = [
@@ -112,15 +152,7 @@ def generate_markdown() -> str:
         lines.append(f'    line "{mode}" [{", ".join(values)}]')
 
     lines.append("```")
-
-    # Generate legend helper - colors match Mermaid xychart default palette
-    def add_legend(modes_present):
-        colors = ["blue", "orange", "green", "purple"]
-        legend_items = [f"{m} ({colors[i]})" for i, m in enumerate(modes_present)]
-        return ["", "**Legend:** " + " | ".join(legend_items), ""]
-
-    modes_present = [m for m in MODES if m in summaries]
-    lines.extend(add_legend(modes_present))
+    lines.extend(add_legend(modes))
 
     # Bandwidth chart (MB/sec)
     lines.extend([
@@ -132,7 +164,7 @@ def generate_markdown() -> str:
         "config:",
         "    themeVariables:",
         "        xyChart:",
-        f'            plotColorPalette: "{CHART_COLORS}"',
+        f'            plotColorPalette: "{chart_colors}"',
         "---",
         "xychart-beta",
         '    title "MB per Second by Connection Count"',
@@ -147,7 +179,7 @@ def generate_markdown() -> str:
     y_max_mbps = int(max_mbps * 1.1)
     lines.append(f'    y-axis "MB/sec" 0 --> {y_max_mbps}')
 
-    for mode in MODES:
+    for mode in modes:
         if mode not in summaries:
             continue
         values = [
@@ -157,7 +189,7 @@ def generate_markdown() -> str:
         lines.append(f'    line "{mode}" [{", ".join(values)}]')
 
     lines.append("```")
-    lines.extend(add_legend(modes_present))
+    lines.extend(add_legend(modes))
 
     # DPDK improvement percentage helper
     def calc_improvement(dpdk_val, other_val):
@@ -168,8 +200,9 @@ def generate_markdown() -> str:
 
     # Throughput improvement chart (DPDK vs others)
     if "dpdk" in summaries:
-        other_modes = [m for m in ["tokio", "tokio-local", "kimojio"] if m in summaries]
+        other_modes = [m for m in modes if m != "dpdk" and m in summaries]
         if other_modes:
+            improvement_colors = get_chart_colors(len(other_modes))
             lines.extend([
                 "",
                 "## DPDK Throughput Improvement",
@@ -181,7 +214,7 @@ def generate_markdown() -> str:
                 "config:",
                 "    themeVariables:",
                 "        xyChart:",
-                f'            plotColorPalette: "{CHART_COLORS_3}"',
+                f'            plotColorPalette: "{improvement_colors}"',
                 "---",
                 "xychart-beta",
                 '    title "DPDK Throughput Improvement (%)"',
@@ -211,10 +244,10 @@ def generate_markdown() -> str:
 
             lines.append("```")
             # Dynamic legend for improvement chart
-            improvement_legend_items = []
-            improvement_colors = ["blue", "orange", "green"]
-            for i, m in enumerate(other_modes):
-                improvement_legend_items.append(f"vs {m} ({improvement_colors[i]})")
+            improvement_legend_items = [
+                f"vs {m} ({COLOR_NAMES[i % len(COLOR_NAMES)]})"
+                for i, m in enumerate(other_modes)
+            ]
             lines.extend([
                 "",
                 "**Legend:** " + " | ".join(improvement_legend_items),
@@ -231,7 +264,7 @@ def generate_markdown() -> str:
         "config:",
         "    themeVariables:",
         "        xyChart:",
-        f'            plotColorPalette: "{CHART_COLORS}"',
+        f'            plotColorPalette: "{chart_colors}"',
         "---",
         "xychart-beta",
         '    title "p50 Latency by Connection Count"',
@@ -246,7 +279,7 @@ def generate_markdown() -> str:
     y_max_lat = int(max_p50 * 1.2)
     lines.append(f'    y-axis "Latency (μs)" 0 --> {y_max_lat}')
 
-    for mode in MODES:
+    for mode in modes:
         if mode not in summaries:
             continue
         values = [
@@ -256,7 +289,7 @@ def generate_markdown() -> str:
         lines.append(f'    line "{mode}" [{", ".join(values)}]')
 
     lines.append("```")
-    lines.extend(add_legend(modes_present))
+    lines.extend(add_legend(modes))
 
     # Latency p90 chart
     lines.extend([
@@ -268,7 +301,7 @@ def generate_markdown() -> str:
         "config:",
         "    themeVariables:",
         "        xyChart:",
-        f'            plotColorPalette: "{CHART_COLORS}"',
+        f'            plotColorPalette: "{chart_colors}"',
         "---",
         "xychart-beta",
         '    title "p90 Latency by Connection Count"',
@@ -283,7 +316,7 @@ def generate_markdown() -> str:
     y_max_p90 = int(max_p90 * 1.2)
     lines.append(f'    y-axis "Latency (μs)" 0 --> {y_max_p90}')
 
-    for mode in MODES:
+    for mode in modes:
         if mode not in summaries:
             continue
         values = [
@@ -293,7 +326,7 @@ def generate_markdown() -> str:
         lines.append(f'    line "{mode}" [{", ".join(values)}]')
 
     lines.append("```")
-    lines.extend(add_legend(modes_present))
+    lines.extend(add_legend(modes))
 
     # Latency p99 chart
     lines.extend([
@@ -305,7 +338,7 @@ def generate_markdown() -> str:
         "config:",
         "    themeVariables:",
         "        xyChart:",
-        f'            plotColorPalette: "{CHART_COLORS}"',
+        f'            plotColorPalette: "{chart_colors}"',
         "---",
         "xychart-beta",
         '    title "p99 Latency by Connection Count"',
@@ -320,7 +353,7 @@ def generate_markdown() -> str:
     y_max_p99 = int(max_p99 * 1.2)
     lines.append(f'    y-axis "Latency (μs)" 0 --> {y_max_p99}')
 
-    for mode in MODES:
+    for mode in modes:
         if mode not in summaries:
             continue
         values = [
@@ -330,7 +363,7 @@ def generate_markdown() -> str:
         lines.append(f'    line "{mode}" [{", ".join(values)}]')
 
     lines.append("```")
-    lines.extend(add_legend(modes_present))
+    lines.extend(add_legend(modes))
 
     # Raw data section
     lines.extend([
@@ -339,7 +372,7 @@ def generate_markdown() -> str:
         "",
     ])
 
-    for mode in MODES:
+    for mode in modes:
         if mode not in summaries:
             continue
         lines.append(f"### {mode}")
