@@ -1,4 +1,5 @@
 pub mod app;
+pub mod eth_dev_config;
 pub mod manual;
 pub mod udp;
 

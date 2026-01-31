@@ -158,10 +158,26 @@ async fn counter_handler_kimojio(_req: Request<Bytes>) -> Response<Bytes> {
 
 /// Run the DPDK-based HTTP server
 fn run_dpdk_server(interface: &str, port: u16, max_queues: Option<usize>, backlog: usize) {
+    use dpdk_net::api::rte::eal::EalBuilder;
     use dpdk_net_test::app::dpdk_server_runner::DpdkServerRunner;
     use dpdk_net_test::app::http_server::Http1Server;
+    use dpdk_net_test::manual::tcp::get_pci_addr;
+    use dpdk_net_test::util::ensure_hugepages;
 
-    let mut runner = DpdkServerRunner::new(interface).port(port);
+    // Setup hugepages (user's responsibility before using the runner)
+    ensure_hugepages().expect("Failed to ensure hugepages");
+
+    // Initialize DPDK EAL (user's responsibility before using the runner)
+    let pci_addr = get_pci_addr(interface).expect("Failed to get PCI address");
+    let _eal = EalBuilder::new()
+        .allow(&pci_addr)
+        .init()
+        .expect("Failed to initialize EAL");
+
+    let mut runner = DpdkServerRunner::new(interface)
+        .with_default_network_config()
+        .with_default_hw_queues()
+        .port(port);
     if let Some(max_queues) = max_queues {
         runner = runner.max_queues(max_queues);
     }

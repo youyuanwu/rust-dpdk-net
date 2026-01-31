@@ -7,27 +7,18 @@
 //! Uses `DpdkDevice` from `dpdk_net::tcp` for the smoltcp Device implementation.
 
 use dpdk_net::api::rte::eal::{Eal, EalBuilder};
-use dpdk_net::api::rte::eth::{EthConf, EthDev, EthDevBuilder, RxQueueConf, TxQueueConf};
-use dpdk_net::api::rte::pktmbuf::{MemPool, MemPoolConfig};
-use dpdk_net::api::rte::queue::{RxQueue, TxQueue};
+use dpdk_net::api::rte::eth::EthDev;
+
+use crate::eth_dev_config::EthDevConfig;
 
 // Re-export DpdkDevice for convenience
 pub use dpdk_net::tcp::DpdkDevice;
 
-/// Default headroom reserved at the front of each mbuf (matches RTE_PKTMBUF_HEADROOM)
-pub const DEFAULT_MBUF_HEADROOM: usize = 128;
-
-/// Default data room size for mbufs (2048 bytes of usable space + headroom)
-pub const DEFAULT_MBUF_DATA_ROOM_SIZE: usize = 2048 + DEFAULT_MBUF_HEADROOM;
-
-/// Default MTU for test devices
-pub const DEFAULT_MTU: usize = 1500;
-
-/// Default number of mbufs in the pool
-pub const DEFAULT_NUM_MBUFS: u32 = 8191;
-
-/// Default number of descriptors per queue
-pub const DEFAULT_NB_DESC: u16 = 1024;
+// Re-export constants from eth_dev_config for backward compatibility
+pub use crate::eth_dev_config::{
+    DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DEFAULT_MTU, DEFAULT_NB_DESC,
+    DEFAULT_NUM_MBUFS,
+};
 
 /// DPDK test context holding all resources needed for a test.
 ///
@@ -80,14 +71,7 @@ impl Drop for DpdkTestContext {
 /// ```
 pub struct DpdkTestContextBuilder {
     vdev: Option<String>,
-    mempool_name: String,
-    num_mbufs: u32,
-    data_room_size: u16,
-    nb_rx_queues: u16,
-    nb_tx_queues: u16,
-    nb_desc: u16,
-    mtu: usize,
-    port_id: u16,
+    eth_dev_config: EthDevConfig,
 }
 
 impl Default for DpdkTestContextBuilder {
@@ -101,14 +85,7 @@ impl DpdkTestContextBuilder {
     pub fn new() -> Self {
         Self {
             vdev: None,
-            mempool_name: "test_mempool".to_string(),
-            num_mbufs: DEFAULT_NUM_MBUFS,
-            data_room_size: DEFAULT_MBUF_DATA_ROOM_SIZE as u16,
-            nb_rx_queues: 1,
-            nb_tx_queues: 1,
-            nb_desc: DEFAULT_NB_DESC,
-            mtu: DEFAULT_MTU,
-            port_id: 0,
+            eth_dev_config: EthDevConfig::new().mempool_name("test_mempool"),
         }
     }
 
@@ -120,49 +97,49 @@ impl DpdkTestContextBuilder {
 
     /// Set the mempool name.
     pub fn mempool_name(mut self, name: impl Into<String>) -> Self {
-        self.mempool_name = name.into();
+        self.eth_dev_config = self.eth_dev_config.mempool_name(name);
         self
     }
 
     /// Set the number of mbufs in the pool.
     pub fn num_mbufs(mut self, n: u32) -> Self {
-        self.num_mbufs = n;
+        self.eth_dev_config = self.eth_dev_config.num_mbufs(n);
         self
     }
 
     /// Set the data room size for mbufs.
     pub fn data_room_size(mut self, size: u16) -> Self {
-        self.data_room_size = size;
+        self.eth_dev_config = self.eth_dev_config.data_room_size(size);
         self
     }
 
     /// Set the number of RX queues.
     pub fn nb_rx_queues(mut self, n: u16) -> Self {
-        self.nb_rx_queues = n;
+        self.eth_dev_config = self.eth_dev_config.nb_rx_queues(n);
         self
     }
 
     /// Set the number of TX queues.
     pub fn nb_tx_queues(mut self, n: u16) -> Self {
-        self.nb_tx_queues = n;
+        self.eth_dev_config = self.eth_dev_config.nb_tx_queues(n);
         self
     }
 
     /// Set the number of descriptors per queue.
     pub fn nb_desc(mut self, n: u16) -> Self {
-        self.nb_desc = n;
+        self.eth_dev_config = self.eth_dev_config.nb_desc(n);
         self
     }
 
     /// Set the MTU.
     pub fn mtu(mut self, mtu: usize) -> Self {
-        self.mtu = mtu;
+        self.eth_dev_config = self.eth_dev_config.mtu(mtu);
         self
     }
 
     /// Set the port ID.
     pub fn port_id(mut self, id: u16) -> Self {
-        self.port_id = id;
+        self.eth_dev_config = self.eth_dev_config.port_id(id);
         self
     }
 
@@ -170,7 +147,7 @@ impl DpdkTestContextBuilder {
     ///
     /// Returns the context (which must be kept alive) and the device for smoltcp/Reactor.
     pub fn build(self) -> Result<(DpdkTestContext, DpdkDevice), dpdk_net::api::Errno> {
-        // Initialize EAL
+        // Initialize EAL (test mode: no hugepages, no PCI)
         let mut eal_builder = EalBuilder::new().no_huge().no_pci();
 
         if let Some(vdev) = &self.vdev {
@@ -179,37 +156,11 @@ impl DpdkTestContextBuilder {
 
         let eal = eal_builder.init()?;
 
-        // Create mempool
-        let mempool_config = MemPoolConfig::new()
-            .num_mbufs(self.num_mbufs)
-            .data_room_size(self.data_room_size);
+        // Build mempool and eth device using shared config
+        let (mempool, eth_dev) = self.eth_dev_config.clone().build()?;
 
-        let mempool = MemPool::create(self.mempool_name.clone(), &mempool_config)?;
-
-        // Configure and start ethernet device
-        let eth_dev = EthDevBuilder::new(self.port_id)
-            .eth_conf(EthConf::new())
-            .nb_rx_queues(self.nb_rx_queues)
-            .nb_tx_queues(self.nb_tx_queues)
-            .rx_queue_conf(RxQueueConf::new().nb_desc(self.nb_desc))
-            .tx_queue_conf(TxQueueConf::new().nb_desc(self.nb_desc))
-            .build(&mempool)?;
-
-        // Create queue handles (using queue 0)
-        let rxq = RxQueue::new(self.port_id, 0);
-        let txq = TxQueue::new(self.port_id, 0);
-
-        // Calculate mbuf capacity
-        let mbuf_capacity = self.data_room_size as usize - DEFAULT_MBUF_HEADROOM;
-
-        // Create the device
-        let device = DpdkDevice::new(
-            rxq,
-            txq,
-            std::sync::Arc::new(mempool),
-            self.mtu,
-            mbuf_capacity,
-        );
+        // Create device for queue 0
+        let device = self.eth_dev_config.create_device(mempool, 0);
 
         let context = DpdkTestContext { _eal: eal, eth_dev };
 

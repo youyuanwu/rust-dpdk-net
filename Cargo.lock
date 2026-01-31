@@ -359,6 +359,7 @@ name = "dpdk-bench-server"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "dpdk-net",
  "dpdk-net-test",
  "http-body-util",
  "hyper",

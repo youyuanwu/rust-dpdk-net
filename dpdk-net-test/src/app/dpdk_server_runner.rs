@@ -2,23 +2,42 @@
 //!
 //! This module provides `DpdkServerRunner` which handles all the boilerplate
 //! for setting up a multi-queue DPDK server:
-//! - Hugepages setup
-//! - EAL initialization
 //! - Ethernet device configuration
 //! - Per-queue worker threads with tokio runtimes
 //! - Graceful shutdown with CancellationToken
 //!
 //! You provide a factory function that creates your server given a `TcpListener`.
 //!
+//! # Prerequisites
+//!
+//! Before using this runner, you must:
+//! 1. Setup hugepages (e.g., via `crate::util::ensure_hugepages()`)
+//! 2. Initialize DPDK EAL (e.g., via `EalBuilder::new().allow(&pci_addr).init()`)
+//!
 //! # Example
 //!
 //! ```no_run
+//! use dpdk_net::api::rte::eal::EalBuilder;
 //! use dpdk_net_test::app::dpdk_server_runner::DpdkServerRunner;
 //! use dpdk_net_test::app::echo_server::{EchoServer, ServerStats};
+//! use dpdk_net_test::manual::tcp::get_pci_addr;
+//! use dpdk_net_test::util::ensure_hugepages;
 //! use std::sync::Arc;
+//!
+//! // Setup hugepages
+//! ensure_hugepages().expect("Failed to ensure hugepages");
+//!
+//! // Initialize DPDK EAL
+//! let pci_addr = get_pci_addr("eth1").expect("Failed to get PCI address");
+//! let _eal = EalBuilder::new()
+//!     .allow(&pci_addr)
+//!     .init()
+//!     .expect("Failed to initialize EAL");
 //!
 //! let stats = Arc::new(ServerStats::default());
 //! DpdkServerRunner::new("eth1")
+//!     .with_default_network_config()
+//!     .with_default_hw_queues()
 //!     .port(8080)
 //!     .run(move |ctx| {
 //!         let stats = stats.clone();
@@ -33,12 +52,9 @@
 use std::sync::Arc;
 use std::thread;
 
-use dpdk_net::api::rte::eal::EalBuilder;
-use dpdk_net::api::rte::eth::{EthConf, EthDev, EthDevBuilder, RxQueueConf, TxQueueConf};
-use dpdk_net::api::rte::pktmbuf::{MemPool, MemPoolConfig};
-use dpdk_net::api::rte::queue::{RxQueue, TxQueue};
+use dpdk_net::api::rte::eth::{EthConf, EthDev, rss_hf};
 use dpdk_net::api::rte::thread::{ThreadRegistration, set_cpu_affinity};
-use dpdk_net::tcp::{DpdkDevice, Reactor, SharedArpCache, TcpListener};
+use dpdk_net::tcp::{Reactor, SharedArpCache, TcpListener};
 
 use smoltcp::iface::{Config, Interface};
 use smoltcp::time::Instant;
@@ -48,7 +64,7 @@ use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::dpdk_test::{DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DEFAULT_MTU};
+use crate::eth_dev_config::EthDevConfig;
 
 /// Context passed to the server factory function.
 ///
@@ -68,6 +84,9 @@ pub struct ServerContext {
 pub struct DpdkServerRunner {
     interface: String,
     port: u16,
+    ip_addr: Option<Ipv4Address>,
+    gateway: Option<Ipv4Address>,
+    hw_queues: Option<usize>,
     max_queues: Option<usize>,
     mbufs_per_queue: u32,
     rx_desc: u16,
@@ -88,6 +107,9 @@ impl DpdkServerRunner {
         Self {
             interface: interface.to_string(),
             port: 8080,
+            ip_addr: None,
+            gateway: None,
+            hw_queues: None,
             max_queues: None,
             mbufs_per_queue: 8192,
             rx_desc: 1024,
@@ -101,6 +123,60 @@ impl DpdkServerRunner {
     /// Set the server port (default: 8080).
     pub fn port(mut self, port: u16) -> Self {
         self.port = port;
+        self
+    }
+
+    /// Set the IP address explicitly.
+    pub fn ip_addr(mut self, ip: Ipv4Address) -> Self {
+        self.ip_addr = Some(ip);
+        self
+    }
+
+    /// Set the gateway address explicitly.
+    pub fn gateway(mut self, gateway: Ipv4Address) -> Self {
+        self.gateway = Some(gateway);
+        self
+    }
+
+    /// Auto-detect IP address and gateway from the configured interface.
+    ///
+    /// This queries the interface's IPv4 address and the system's default gateway.
+    /// If no gateway is found, defaults to 10.0.0.1.
+    ///
+    /// # Panics
+    /// Panics if the interface IP address cannot be determined.
+    pub fn with_default_network_config(mut self) -> Self {
+        let ip_addr = crate::manual::tcp::get_interface_ipv4(&self.interface)
+            .expect("Failed to get IP address for interface");
+        let gateway =
+            crate::manual::tcp::get_default_gateway().unwrap_or(Ipv4Address::new(10, 0, 0, 1));
+        self.ip_addr = Some(ip_addr);
+        self.gateway = Some(gateway);
+        self
+    }
+
+    /// Set the number of hardware queues explicitly.
+    ///
+    /// This overrides auto-detection. Use this when you know the exact
+    /// number of queues to use.
+    pub fn hw_queues(mut self, queues: usize) -> Self {
+        self.hw_queues = Some(queues);
+        self
+    }
+
+    /// Auto-detect hardware queues via ethtool for the configured interface.
+    ///
+    /// This queries the NIC's combined channel count using ethtool.
+    /// Call this after `new()` to enable auto-detection, or use `hw_queues()`
+    /// to set an explicit value.
+    ///
+    /// # Panics
+    /// Panics if ethtool query fails.
+    pub fn with_default_hw_queues(mut self) -> Self {
+        let hw_queues = crate::util::get_ethtool_channels(&self.interface)
+            .map(|ch| ch.combined_count as usize)
+            .expect("Failed to get hardware queues via ethtool");
+        self.hw_queues = Some(hw_queues);
         self
     }
 
@@ -141,6 +217,10 @@ impl DpdkServerRunner {
     /// The factory receives a `ServerContext` and should return a future that
     /// runs until shutdown.
     ///
+    /// # Prerequisites
+    /// - Hugepages must be configured (e.g., via `crate::util::ensure_hugepages()`)
+    /// - DPDK EAL must be initialized (e.g., via `EalBuilder::new().allow(&pci_addr).init()`)
+    ///
     /// # Type Parameters
     /// * `F` - Factory function type
     /// * `Fut` - Future type returned by the factory
@@ -149,28 +229,19 @@ impl DpdkServerRunner {
         F: Fn(ServerContext) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = ()> + 'static,
     {
-        // Setup hugepages
-        crate::util::ensure_hugepages().unwrap();
+        // Get network configuration (must be set via ip_addr()/gateway() or with_default_network_config())
+        let ip_addr = self.ip_addr.expect(
+            "ip_addr not set. Call ip_addr() or with_default_network_config() before run()",
+        );
+        let gateway = self.gateway.expect(
+            "gateway not set. Call gateway() or with_default_network_config() before run()",
+        );
 
-        // Get network configuration
-        let ip_addr = crate::manual::tcp::get_interface_ipv4(&self.interface)
-            .expect("Failed to get IP address");
-        let gateway =
-            crate::manual::tcp::get_default_gateway().unwrap_or(Ipv4Address::new(10, 0, 0, 1));
-        let pci_addr =
-            crate::manual::tcp::get_pci_addr(&self.interface).expect("Failed to get PCI address");
-
-        // Query hardware queue count via ethtool BEFORE initializing DPDK
-        let hw_queues = crate::util::get_ethtool_channels(&self.interface)
-            .map(|ch| ch.combined_count as usize)
-            .expect("fail to get hw queues");
-        info!("Hardware queue limit from ethtool: {}", hw_queues);
-
-        // Initialize DPDK EAL
-        let _eal = EalBuilder::new()
-            .allow(&pci_addr)
-            .init()
-            .expect("Failed to initialize EAL");
+        // Get hardware queue count (must be set via hw_queues() or with_default_hw_queues())
+        let hw_queues = self
+            .hw_queues
+            .expect("hw_queues not set. Call hw_queues() or with_default_hw_queues() before run()");
+        info!("Hardware queue count: {}", hw_queues);
 
         // Query device info to get RETA size before configuring
         let dev_info = EthDev::new(0).info().expect("Failed to get device info");
@@ -211,27 +282,22 @@ impl DpdkServerRunner {
 
         self.print_banner(ip_addr, gateway, hw_queues, num_queues);
 
-        // Create mempool
+        // Build mempool and ethernet device using shared config
         let total_mbufs = self.mbufs_per_queue * num_queues as u32;
-        let mempool_config = MemPoolConfig::new()
-            .num_mbufs(total_mbufs)
-            .data_room_size(DEFAULT_MBUF_DATA_ROOM_SIZE as u16);
-        let mempool = Arc::new(
-            MemPool::create("server_pool", &mempool_config).expect("Failed to create mempool"),
-        );
-
-        // Configure ethernet device with TCP RSS for multi-queue distribution
-        use dpdk_net::api::rte::eth::rss_hf;
         let eth_conf =
             EthConf::new().rss_with_hash(rss_hf::NONFRAG_IPV4_TCP | rss_hf::NONFRAG_IPV6_TCP);
 
-        let eth_dev = EthDevBuilder::new(0)
-            .eth_conf(eth_conf)
-            .nb_rx_queues(num_queues as u16)
-            .nb_tx_queues(num_queues as u16)
-            .rx_queue_conf(RxQueueConf::new().nb_desc(self.rx_desc))
-            .tx_queue_conf(TxQueueConf::new().nb_desc(self.tx_desc))
-            .build(&mempool)
+        let eth_dev_config = EthDevConfig::new()
+            .mempool_name("server_pool")
+            .num_mbufs(total_mbufs)
+            .nb_queues(num_queues as u16)
+            .rx_desc(self.rx_desc)
+            .tx_desc(self.tx_desc)
+            .eth_conf(eth_conf);
+
+        let (mempool, eth_dev) = eth_dev_config
+            .clone()
+            .build()
             .expect("Failed to configure eth device");
 
         // Log RSS configuration after device is started
@@ -304,6 +370,7 @@ impl DpdkServerRunner {
             num_queues,
             cancel.clone(),
             mempool.clone(),
+            eth_dev_config.clone(),
             mac_addr,
             ip_addr,
             gateway,
@@ -316,6 +383,7 @@ impl DpdkServerRunner {
             0,
             cancel,
             mempool.clone(),
+            eth_dev_config,
             mac_addr,
             ip_addr,
             gateway,
@@ -345,11 +413,7 @@ impl DpdkServerRunner {
             info!(runtime_secs, "Server stopped");
         }
 
-        // Cleanup in correct order: eth_dev first, then mempool, then EAL (via _eal drop)
         self.cleanup(eth_dev, num_queues);
-
-        // Explicitly drop mempool before EAL cleanup
-        // This ensures all DPDK memory is freed while EAL is still active
         drop(mempool);
     }
 
@@ -358,7 +422,8 @@ impl DpdkServerRunner {
     fn run_worker<F, Fut>(
         queue_id: usize,
         cancel: CancellationToken,
-        mempool: Arc<MemPool>,
+        mempool: Arc<dpdk_net::api::rte::pktmbuf::MemPool>,
+        eth_dev_config: EthDevConfig,
         mac_addr: EthernetAddress,
         ip_addr: Ipv4Address,
         gateway: Ipv4Address,
@@ -386,13 +451,8 @@ impl DpdkServerRunner {
 
         debug!(queue_id, "Starting worker");
 
-        // Create queue handles
-        let rxq = RxQueue::new(0, queue_id as u16);
-        let txq = TxQueue::new(0, queue_id as u16);
-
-        // Create DPDK device with shared ARP cache support
-        let mbuf_capacity = DEFAULT_MBUF_DATA_ROOM_SIZE - DEFAULT_MBUF_HEADROOM;
-        let mut device = DpdkDevice::new(rxq, txq, mempool, DEFAULT_MTU, mbuf_capacity);
+        // Create DPDK device using shared config
+        let mut device = eth_dev_config.create_device(mempool, queue_id as u16);
 
         // Enable shared ARP cache for multi-queue setups
         if let Some(cache) = shared_arp_cache {
@@ -467,7 +527,8 @@ impl DpdkServerRunner {
         &self,
         num_queues: usize,
         cancel: CancellationToken,
-        mempool: Arc<MemPool>,
+        mempool: Arc<dpdk_net::api::rte::pktmbuf::MemPool>,
+        eth_dev_config: EthDevConfig,
         mac_addr: EthernetAddress,
         ip_addr: Ipv4Address,
         gateway: Ipv4Address,
@@ -486,6 +547,7 @@ impl DpdkServerRunner {
         for queue_id in 1..num_queues {
             let cancel = cancel.clone();
             let mempool = mempool.clone();
+            let eth_dev_config = eth_dev_config.clone();
             let factory = factory.clone();
             let shared_arp_cache = shared_arp_cache.clone();
             let port = self.port;
@@ -500,6 +562,7 @@ impl DpdkServerRunner {
                         queue_id,
                         cancel,
                         mempool,
+                        eth_dev_config,
                         mac_addr,
                         ip_addr,
                         gateway,
