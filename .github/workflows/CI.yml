@@ -58,3 +58,118 @@ jobs:
     
     - name: Run cargo test
       run: cargo +${{ matrix.rust }} test --all -- --nocapture
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install libvirt and QEMU
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          qemu-kvm libvirt-daemon-system libvirt-clients \
+          libvirt-dev bridge-utils virtinst qemu-utils \
+          cloud-image-utils ansible jq
+
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.14.4"
+
+    - name: Setup libvirt
+      run: |
+        # Start libvirtd
+        sudo systemctl start libvirtd
+        sudo usermod -aG libvirt $USER
+        
+        # Allow current session to use libvirt (CI workaround)
+        sudo chmod 666 /var/run/libvirt/libvirt-sock
+        
+        # Configure QEMU to run without security restrictions (for CI only)
+        echo 'security_driver = "none"' | sudo tee -a /etc/libvirt/qemu.conf
+        echo 'user = "root"' | sudo tee -a /etc/libvirt/qemu.conf
+        echo 'group = "root"' | sudo tee -a /etc/libvirt/qemu.conf
+        sudo systemctl restart libvirtd
+        
+        # Create default storage pool
+        sudo mkdir -p /var/lib/libvirt/images
+        sudo chmod 777 /var/lib/libvirt/images
+        sudo virsh pool-define-as default dir --target /var/lib/libvirt/images || true
+        sudo virsh pool-build default || true
+        sudo virsh pool-start default || true
+        sudo virsh pool-autostart default || true
+        
+        # Start default network
+        sudo virsh net-start default || true
+        
+        # Verify access
+        virsh list --all
+
+    - name: Generate SSH key
+      run: |
+        ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
+
+    - name: Start local VMs (no-kvm)
+      run: |
+        cd tests/infra-local
+        ./scripts/start-vm.sh --no-kvm -y --no-color
+      env:
+        LIBVIRT_DEFAULT_URI: "qemu:///system"
+
+    - name: Wait for DHCP leases
+      run: |
+        echo "Waiting for VMs to get DHCP leases (this may take a while without KVM)..."
+        for i in {1..120}; do
+          VM1_IP=$(virsh net-dhcp-leases default 2>/dev/null | grep "dpdk-vm1" | awk '{print $5}' | cut -d'/' -f1)
+          VM2_IP=$(virsh net-dhcp-leases default 2>/dev/null | grep "dpdk-vm2" | awk '{print $5}' | cut -d'/' -f1)
+          if [[ -n "$VM1_IP" && -n "$VM2_IP" ]]; then
+            echo "Both VMs have DHCP leases:"
+            echo "  VM1: $VM1_IP"
+            echo "  VM2: $VM2_IP"
+            break
+          fi
+          echo "Attempt $i/120: Waiting..."
+          sleep 5
+        done
+        # Show current leases
+        virsh net-dhcp-leases default
+      env:
+        LIBVIRT_DEFAULT_URI: "qemu:///system"
+
+    - name: Wait for SSH to be ready
+      run: |
+        for vm in 1 2; do
+          echo "Waiting for SSH on VM${vm}..."
+          IP=$(virsh net-dhcp-leases default 2>/dev/null | grep "dpdk-vm${vm}" | awk '{print $5}' | cut -d'/' -f1)
+          if [[ -z "$IP" ]]; then
+            echo "ERROR: No IP for VM${vm}"
+            exit 1
+          fi
+          for i in {1..60}; do
+            if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes \
+                   -o UserKnownHostsFile=/dev/null azureuser@"$IP" "exit 0" 2>/dev/null; then
+              echo "VM${vm} ($IP) SSH is ready"
+              break
+            fi
+            echo "  Attempt $i/60: Waiting for SSH..."
+            sleep 5
+          done
+        done
+      env:
+        LIBVIRT_DEFAULT_URI: "qemu:///system"
+
+    - name: Run connectivity test
+      run: |
+        cd tests/e2e
+        ./run_tests.sh --local playbooks/test_connectivity.yml
+      env:
+        LIBVIRT_DEFAULT_URI: "qemu:///system"
+
+    - name: Destroy VMs
+      if: always()
+      run: |
+        cd tests/infra-local
+        ./scripts/destroy-vm.sh -y || true
+      env:
+        LIBVIRT_DEFAULT_URI: "qemu:///system"

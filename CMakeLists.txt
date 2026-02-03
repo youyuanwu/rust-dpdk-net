@@ -145,3 +145,4 @@ add_custom_target(dpdk_run_example
 )
 
 add_subdirectory(tests/infra)
+add_subdirectory(tests/infra-local)
