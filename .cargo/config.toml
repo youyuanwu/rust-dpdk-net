@@ -2,6 +2,10 @@
 # If using hardware DPDK devices, may need to run tests with sudo
 # runner = "sudo -E"
 
+# Use Nehalem (corei7) CPU target for QEMU software emulation compatibility
+# This matches DPDK's cpu_instruction_set=generic setting
+rustflags = ["-C", "target-cpu=nehalem"]
+
 # One job at a time to avoid port conflicts
 [test]
 jobs = 1

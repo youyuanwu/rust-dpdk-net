@@ -286,8 +286,14 @@ impl DpdkServerRunner {
 
         // Build mempool and ethernet device using shared config
         let total_mbufs = self.mbufs_per_queue * num_queues as u32;
-        let eth_conf =
-            EthConf::new().rss_with_hash(rss_hf::NONFRAG_IPV4_TCP | rss_hf::NONFRAG_IPV6_TCP);
+
+        // Only enable RSS if the device supports it (reta_size > 0)
+        let eth_conf = if reta_size > 0 {
+            EthConf::new().rss_with_hash(rss_hf::NONFRAG_IPV4_TCP | rss_hf::NONFRAG_IPV6_TCP)
+        } else {
+            info!("Device does not support RSS (reta_size=0), using simple queue mode");
+            EthConf::new()
+        };
 
         let eth_dev_config = EthDevConfig::new()
             .mempool_name("server_pool")

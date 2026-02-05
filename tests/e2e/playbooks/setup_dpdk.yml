@@ -90,7 +90,7 @@
       ansible.builtin.debug:
         msg: "{{ dpdk_info.stdout_lines }}"
 
-    - name: Configure hugepages (2MB)
+    - name: Configure hugepages (2MB) - skip for local VMs (configured via Terraform)
       ansible.builtin.shell: |
         echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
         mkdir -p /mnt/huge
@@ -98,7 +98,128 @@
         echo "Hugepages configured:"
         cat /proc/meminfo | grep Huge
       register: hugepages_result
+      when: not (is_local | default(false))
+
+    - name: Check existing hugepages (local VMs)
+      ansible.builtin.shell: cat /proc/meminfo | grep Huge
+      register: hugepages_result
+      changed_when: false
+      when: is_local | default(false)
 
     - name: Display hugepages info
       ansible.builtin.debug:
         msg: "{{ hugepages_result.stdout_lines }}"
+
+    # ============================================================================
+    # VFIO-PCI binding for local VMs (QEMU/KVM virtio devices)
+    # Required because DPDK virtio PMD needs userspace driver access
+    # Uses noiommu mode since VMs don't have hardware IOMMU
+    # ============================================================================
+
+    - name: Load vfio modules (local VMs)
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - vfio
+        - vfio_pci
+      when: is_local | default(false)
+
+    - name: Enable unsafe noiommu mode for vfio (required without hardware IOMMU)
+      ansible.builtin.shell: |
+        echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
+      changed_when: false
+      when: is_local | default(false)
+
+    # Try to get PCI address from interface (works before binding to vfio-pci)
+    - name: Check if DPDK interface still exists
+      ansible.builtin.stat:
+        path: "/sys/class/net/{{ dpdk_interface }}/device"
+      register: dpdk_interface_exists
+      when: is_local | default(false)
+
+    - name: Get DPDK interface PCI address from interface
+      ansible.builtin.shell: |
+        readlink -f /sys/class/net/{{ dpdk_interface }}/device | xargs dirname | xargs basename
+      register: dpdk_pci_from_interface
+      changed_when: false
+      when: 
+        - is_local | default(false)
+        - dpdk_interface_exists.stat.exists | default(false)
+
+    # Fallback: find virtio-net device already bound to vfio-pci (second NIC = second virtio)
+    # On our VMs: enp0s3 (0000:00:03.0) = management, enp0s4 (0000:00:04.0) = DPDK
+    - name: Find virtio PCI device bound to vfio-pci (fallback for subsequent runs)
+      ansible.builtin.shell: |
+        # Look for the DPDK NIC PCI address (0000:00:04.0 for second virtio NIC)
+        ls /sys/bus/pci/drivers/vfio-pci/ 2>/dev/null | grep -E '^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9]$' | grep -v '0000:00:03' | head -1
+      register: dpdk_pci_from_vfio
+      changed_when: false
+      when: 
+        - is_local | default(false)
+        - not (dpdk_interface_exists.stat.exists | default(false))
+
+    - name: Set DPDK PCI address fact
+      ansible.builtin.set_fact:
+        dpdk_pci_addr: "{{ dpdk_pci_from_interface.stdout | default(dpdk_pci_from_vfio.stdout | default('')) }}"
+      when: is_local | default(false)
+
+    - name: Display detected DPDK PCI address
+      ansible.builtin.debug:
+        msg: "DPDK interface {{ dpdk_interface }} PCI address: {{ dpdk_pci_addr }}"
+      when: 
+        - is_local | default(false)
+        - dpdk_pci_addr != ""
+
+    - name: Check if DPDK device is bound to vfio-pci
+      ansible.builtin.stat:
+        path: "/sys/bus/pci/drivers/vfio-pci/{{ dpdk_pci_addr }}"
+      register: dpdk_vfio_bound
+      when: 
+        - is_local | default(false)
+        - dpdk_pci_addr != ""
+
+    - name: Unbind DPDK device from kernel driver
+      ansible.builtin.shell: |
+        PCI_ADDR="{{ dpdk_pci_addr }}"
+        # Only unbind if currently bound to a driver
+        if [ -L "/sys/bus/pci/devices/$PCI_ADDR/driver" ]; then
+          CURRENT_DRIVER=$(basename $(readlink /sys/bus/pci/devices/$PCI_ADDR/driver))
+          echo "Currently bound to: $CURRENT_DRIVER"
+          echo "$PCI_ADDR" > /sys/bus/pci/devices/$PCI_ADDR/driver/unbind
+          echo "Unbound from $CURRENT_DRIVER"
+        fi
+      when: 
+        - is_local | default(false)
+        - dpdk_pci_addr != ""
+        - not (dpdk_vfio_bound.stat.exists | default(false))
+      register: dpdk_unbind_result
+      changed_when: "'Unbound' in dpdk_unbind_result.stdout"
+
+    - name: Bind DPDK device to vfio-pci
+      ansible.builtin.shell: |
+        PCI_ADDR="{{ dpdk_pci_addr }}"
+        echo "vfio-pci" > /sys/bus/pci/devices/$PCI_ADDR/driver_override
+        echo "$PCI_ADDR" > /sys/bus/pci/drivers/vfio-pci/bind
+        echo "Bound $PCI_ADDR to vfio-pci"
+      when: 
+        - is_local | default(false)
+        - dpdk_pci_addr != ""
+        - not (dpdk_vfio_bound.stat.exists | default(false))
+      register: dpdk_bind_result
+
+    - name: Verify DPDK device bound to vfio-pci
+      ansible.builtin.stat:
+        path: "/sys/bus/pci/drivers/vfio-pci/{{ dpdk_pci_addr }}"
+      register: dpdk_vfio_verify
+      failed_when: not dpdk_vfio_verify.stat.exists
+      when: 
+        - is_local | default(false)
+        - dpdk_pci_addr != ""
+
+    - name: Display vfio-pci binding status
+      ansible.builtin.debug:
+        msg: "DPDK device {{ dpdk_pci_addr }} successfully bound to vfio-pci"
+      when: 
+        - is_local | default(false)
+        - dpdk_pci_addr != ""

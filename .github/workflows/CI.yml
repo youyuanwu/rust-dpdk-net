@@ -6,6 +6,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ ubuntu-latest ]
         rust: [ 1.90.0, 1.93.0 ]
@@ -29,6 +30,10 @@ jobs:
       with:
         toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
 
     - name: Install cmake
       uses: lukka/get-cmake@latest
@@ -59,7 +64,37 @@ jobs:
     - name: Run cargo test
       run: cargo +${{ matrix.rust }} test --all -- --nocapture
 
+    - name: Build DPDK deb package
+      # sudo needed: meson install writes to /usr/local log dir even with DESTDIR staging
+      if: matrix.rust == '1.93.0'
+      run: |
+        sudo cmake --build build --target dpdk_deb
+
+    - name: Build release binaries
+      if: matrix.rust == '1.93.0'
+      run: |
+        cargo +${{ matrix.rust }} build --release --bin dpdk-bench-server --bin dpdk-bench-client
+
+    - name: Upload DPDK deb artifact
+      if: matrix.rust == '1.93.0'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dpdk-deb
+        path: build/dpdk-net_*.deb
+        if-no-files-found: error
+
+    - name: Upload bench binaries artifact
+      if: matrix.rust == '1.93.0'
+      uses: actions/upload-artifact@v4
+      with:
+        name: bench-binaries
+        path: |
+          target/release/dpdk-bench-server
+          target/release/dpdk-bench-client
+        if-no-files-found: error
+
   e2e:
+    # No 'needs: build' - runs in parallel, waits for artifacts via polling
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
@@ -112,8 +147,7 @@ jobs:
 
     - name: Start local VMs (no-kvm)
       run: |
-        cd tests/infra-local
-        ./scripts/start-vm.sh --no-kvm -y --no-color
+        ./tests/infra-local/scripts/start-vm.sh --no-kvm -y --no-color
       env:
         LIBVIRT_DEFAULT_URI: "qemu:///system"
 
@@ -161,15 +195,72 @@ jobs:
 
     - name: Run connectivity test
       run: |
-        cd tests/e2e
-        ./run_tests.sh --local playbooks/test_connectivity.yml
+        ./tests/e2e/run_tests.sh --local playbooks/test_connectivity.yml
+      env:
+        LIBVIRT_DEFAULT_URI: "qemu:///system"
+
+    - name: Wait for build artifacts to be ready
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "Waiting for build artifacts to be ready..."
+        for i in {1..120}; do
+          # Check if both artifacts exist
+          ARTIFACTS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts --jq '.artifacts[].name' 2>/dev/null || echo "")
+          if echo "$ARTIFACTS" | grep -q "dpdk-deb" && echo "$ARTIFACTS" | grep -q "bench-binaries"; then
+            echo "All artifacts are ready!"
+            exit 0
+          fi
+          
+          # Check if build job failed
+          BUILD_STATUS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name | contains("build")) | select(.name | contains("1.93.0")) | .conclusion' 2>/dev/null | head -1)
+          if [ "$BUILD_STATUS" = "failure" ] || [ "$BUILD_STATUS" = "cancelled" ]; then
+            echo "Build job failed or was cancelled!"
+            exit 1
+          fi
+          
+          echo "Attempt $i/120: Waiting for artifacts... (found: $ARTIFACTS)"
+          sleep 10
+        done
+        echo "Timeout waiting for artifacts"
+        exit 1
+
+    - name: Download DPDK deb artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: dpdk-deb
+        path: build/
+
+    - name: Download bench binaries artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: bench-binaries
+        path: target/release/
+
+    - name: List downloaded artifacts
+      run: |
+        echo "=== DPDK deb package ==="
+        ls -la build/*.deb
+        echo ""
+        echo "=== Bench binaries ==="
+        ls -la target/release/dpdk-bench-*
+        chmod +x target/release/dpdk-bench-*
+
+    - name: Setup DPDK on VMs
+      run: |
+        ./tests/e2e/run_tests.sh --local playbooks/setup_dpdk.yml
+      env:
+        LIBVIRT_DEFAULT_URI: "qemu:///system"
+
+    - name: Run HTTP server test (DPDK mode)
+      run: |
+        ./tests/e2e/run_tests.sh --local playbooks/http_server_test.yml
       env:
         LIBVIRT_DEFAULT_URI: "qemu:///system"
 
     - name: Destroy VMs
       if: always()
       run: |
-        cd tests/infra-local
-        ./scripts/destroy-vm.sh -y || true
+        ./tests/infra-local/scripts/destroy-vm.sh -y || true
       env:
         LIBVIRT_DEFAULT_URI: "qemu:///system"

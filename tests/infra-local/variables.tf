@@ -77,7 +77,7 @@ variable "vm1_vcpus" {
 variable "vm2_memory_mb" {
   description = "Memory for VM2 in MB"
   type        = number
-  default     = 4096
+  default     = 2048
 }
 
 variable "vm2_vcpus" {

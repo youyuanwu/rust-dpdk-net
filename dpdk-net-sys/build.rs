@@ -27,8 +27,9 @@ fn generate_bindings(include_dirs: &[PathBuf]) {
     for path in include_dirs {
         cc_builder.include(path);
     }
-    // DPDK requires -march=native for SIMD intrinsics
-    cc_builder.flag("-march=native");
+    // Use corei7/Nehalem for QEMU software emulation compatibility
+    // This matches DPDK's cpu_instruction_set=generic setting
+    cc_builder.flag("-march=corei7");
     cc_builder.compile("dpdk_wrapper");
 
     // Start with include paths from pkg-config

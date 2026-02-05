@@ -68,10 +68,26 @@ message(STATUS "DPDK source code fetched to: ${dpdk_SOURCE_DIR}")
 message(STATUS "DPDK build directory: ${dpdk_BINARY_DIR}")
 
 # Add custom target to configure DPDK with meson
+# Uses cpu_instruction_set=generic (corei7/Nehalem) for compatibility with QEMU software emulation
+# Uses release build type for optimized binaries
+# Skips if already configured (use dpdk_reconfigure to force)
 add_custom_target(dpdk_configure
-  COMMAND meson setup --reconfigure ${dpdk_BINARY_DIR} ${dpdk_SOURCE_DIR} -Dexamples=all
+  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/dpdk_configure.cmake
+    ${dpdk_BINARY_DIR}
+    ${dpdk_SOURCE_DIR}
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  COMMENT "Configuring DPDK with meson"
+  COMMENT "Configuring DPDK with meson (release build, generic/corei7 target)"
+  VERBATIM
+)
+
+# Add custom target to force reconfigure DPDK with meson
+add_custom_target(dpdk_reconfigure
+  COMMAND meson setup --reconfigure ${dpdk_BINARY_DIR} ${dpdk_SOURCE_DIR}
+    -Dexamples=all
+    -Dcpu_instruction_set=generic
+    --buildtype=release
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  COMMENT "Reconfiguring DPDK with meson"
   VERBATIM
 )
 
@@ -80,47 +96,51 @@ add_custom_target(dpdk_build
   COMMAND ninja -C ${dpdk_BINARY_DIR}
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Building DPDK with ninja"
-  # DEPENDS dpdk_configure
+  DEPENDS dpdk_configure
   VERBATIM
 )
 
-# Add custom target to install DPDK artifacts
+# Add custom target to install DPDK from deb package
 add_custom_target(dpdk_install
-  COMMAND ninja -C ${dpdk_BINARY_DIR} install
+  COMMAND apt install -y ${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_22.11.11_amd64.deb
   # update the shared library cache
   COMMAND ldconfig
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  COMMENT "Installing DPDK artifacts"
-  DEPENDS dpdk_build
+  COMMENT "Installing DPDK from .deb package"
+  DEPENDS dpdk_deb
   VERBATIM
 )
 
-# Add custom target to uninstall DPDK artifacts
+# Add custom target to uninstall DPDK package
 add_custom_target(dpdk_uninstall
-  COMMAND ninja -C ${dpdk_BINARY_DIR} uninstall
+  COMMAND apt remove -y dpdk-net || true
+  COMMAND ldconfig
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  COMMENT "Uninstalling DPDK artifacts"
+  COMMENT "Uninstalling DPDK package"
+  VERBATIM
+)
+
+# Add custom target to clean DPDK build artifacts and deb package
+add_custom_target(dpdk_clean
+  COMMAND ninja -C ${dpdk_BINARY_DIR} clean
+  COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg
+  COMMAND ${CMAKE_COMMAND} -E remove -f ${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_22.11.11_amd64.deb
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  COMMENT "Cleaning DPDK build artifacts and deb package"
   VERBATIM
 )
 
 # Add custom target to create .deb package without installing to system
 # Uses DESTDIR staging with dpkg-deb - no extra tools required
+# Skips if deb file already exists
 add_custom_target(dpdk_deb
-  COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg/DEBIAN
-  COMMAND ${CMAKE_COMMAND} -E env DESTDIR=${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg ninja -C ${dpdk_BINARY_DIR} install
-  COMMAND ${CMAKE_COMMAND} -E echo "Package: dpdk-net" > ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg/DEBIAN/control
-  COMMAND ${CMAKE_COMMAND} -E echo "Version: 22.11.11" >> ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg/DEBIAN/control
-  COMMAND ${CMAKE_COMMAND} -E echo "Section: libs" >> ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg/DEBIAN/control
-  COMMAND ${CMAKE_COMMAND} -E echo "Priority: optional" >> ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg/DEBIAN/control
-  COMMAND ${CMAKE_COMMAND} -E echo "Architecture: amd64" >> ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg/DEBIAN/control
-  COMMAND ${CMAKE_COMMAND} -E echo "Depends: libc6, libnuma1, libelf1t64 | libelf1, zlib1g, libzstd1, libssl3t64 | libssl3, libatomic1, rdma-core, libibverbs1, libmlx5-1, librdmacm1" >> ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg/DEBIAN/control
-  COMMAND ${CMAKE_COMMAND} -E echo "Maintainer: maintainer@example.com" >> ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg/DEBIAN/control
-  COMMAND ${CMAKE_COMMAND} -E echo "Description: Data Plane Development Kit with Mellanox mlx5 support (custom build for dpdk-net)" >> ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg/DEBIAN/control
-  COMMAND dpkg-deb --build ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg ${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_22.11.11_amd64.deb
+  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/dpdk_deb.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_22.11.11_amd64.deb
+    ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg
+    ${dpdk_BINARY_DIR}
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Creating DPDK .deb package (staged, no system install)"
-  DEPENDS dpdk_build
+  # DEPENDS dpdk_build
   VERBATIM
 )
 

@@ -103,7 +103,14 @@
     server_port: 8080
     # Server mode: 'dpdk' (default), 'tokio', 'tokio-local', or 'kimojio' - passed via -e server_mode=tokio
     _server_mode: "{{ server_mode | default('dpdk') }}"
+    # DPDK interface name (from inventory: eth1 for Azure, enp0s4 for local)
+    _dpdk_interface: "{{ hostvars['vm1'].dpdk_interface | default('eth1') }}"
+    # Is this a local VM?
+    _is_local: "{{ hostvars['vm1'].is_local | default(false) }}"
+    # DPDK IP address for local VMs (from inventory)
+    _dpdk_ip: "{{ hostvars['vm1'].private_ip }}"
     # Server start options based on mode
+    # For local VMs with vfio-pci, we need to pass --ip-addr and --hw-queues explicitly
     server_start_opts: >-
       {%- if (server_mode | default('dpdk')) == 'tokio' -%}
       --mode tokio
@@ -113,29 +120,34 @@
       --mode kimojio
       {%- elif (server_mode | default('dpdk')) == 'kimojio-poll' -%}
       --mode kimojio-poll
+      {%- elif hostvars['vm1'].is_local | default(false) -%}
+      --interface {{ hostvars['vm1'].dpdk_interface | default('enp0s4') }} --backlog 200 --ip-addr {{ hostvars['vm1'].private_ip2 }} --gateway 10.0.1.1 --hw-queues 1
       {%- else -%}
-      --backlog 200
+      --interface {{ hostvars['vm1'].dpdk_interface | default('eth1') }} --backlog 200
       {%- endif -%}
-    # IP address: NIC2 for DPDK, NIC1 for Tokio/Kimojio modes
-    vm1_private_ip: "{{ hostvars['vm1'].private_ip if (server_mode | default('dpdk')) in ['tokio', 'tokio-local', 'kimojio', 'kimojio-poll'] else (hostvars['vm1'].private_ip2 | default(hostvars['vm1'].private_ip)) }}"
+    # IP address for testing:
+    # - DPDK mode: use private_ip2 (NIC2 / DPDK data network)
+    # - Tokio/Kimojio: use private_ip (NIC1 / management network)
+    vm1_private_ip: "{{ hostvars['vm1'].private_ip if (server_mode | default('dpdk')) in ['tokio', 'tokio-local', 'kimojio', 'kimojio-poll'] else hostvars['vm1'].private_ip2 }}"
 
   tasks:
     - name: Run test with guaranteed cleanup
       block:
         - name: Debug server mode variables
           ansible.builtin.debug:
-            msg: "server_mode={{ server_mode | default('NOT SET') }}, _server_mode={{ _server_mode }}, server_start_opts='{{ server_start_opts }}', vm1_private_ip={{ vm1_private_ip }}"
+            msg: "server_mode={{ server_mode | default('NOT SET') }}, _server_mode={{ _server_mode }}, interface={{ _dpdk_interface }}, server_start_opts='{{ server_start_opts }}', vm1_private_ip={{ vm1_private_ip }}"
 
         - name: Kill any existing dpdk-bench-server
           ansible.builtin.shell: killall -9 dpdk-bench-server 2>/dev/null; exit 0
           changed_when: false
 
-        - name: Ensure hugepages are configured
+        - name: Ensure hugepages are configured (skip for local VMs)
           ansible.builtin.shell: |
             echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
             mkdir -p /mnt/huge
             mount -t hugetlbfs nodev /mnt/huge 2>/dev/null || true
           changed_when: false
+          when: not (hostvars['vm1'].is_local | default(false))
 
         - name: Start HTTP server in background
           ansible.builtin.shell: |
@@ -149,7 +161,7 @@
 
         - name: Display server PID
           ansible.builtin.debug:
-            msg: "HTTP server started with PID: {{ server_pid.stdout }} (mode: {{ _server_mode }}, ip: {{ vm1_private_ip }})"
+            msg: "HTTP server started with PID: {{ server_pid.stdout }} (mode: {{ _server_mode }}, interface: {{ _dpdk_interface }}, ip: {{ vm1_private_ip }})"
 
         - name: Wait for server to start
           ansible.builtin.pause:

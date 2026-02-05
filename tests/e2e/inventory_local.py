@@ -57,9 +57,11 @@ def load_inventory():
         inventory["vms"]["hosts"].append("vm1")
         inventory["_meta"]["hostvars"]["vm1"] = {
             "ansible_host": vms["vm1"],
-            "private_ip": "10.0.1.4",  # DPDK network static IP
-            "private_ip2": "",
+            "private_ip": vms["vm1"],  # Management network (DHCP)
+            "private_ip2": "10.0.1.4",  # DPDK data network (static)
             "vm_name": "dpdk-vm1",
+            "dpdk_interface": "enp0s4",  # Local VM interface name
+            "is_local": True,
         }
     
     # VM2
@@ -67,9 +69,11 @@ def load_inventory():
         inventory["vms"]["hosts"].append("vm2")
         inventory["_meta"]["hostvars"]["vm2"] = {
             "ansible_host": vms["vm2"],
-            "private_ip": "10.0.1.6",  # DPDK network static IP
-            "private_ip2": "",
+            "private_ip": vms["vm2"],  # Management network (DHCP)
+            "private_ip2": "10.0.1.6",  # DPDK data network (static)
             "vm_name": "dpdk-vm2",
+            "dpdk_interface": "enp0s4",  # Local VM interface name
+            "is_local": True,
         }
     
     return inventory

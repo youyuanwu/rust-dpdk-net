@@ -363,6 +363,7 @@ dependencies = [
  "dpdk-net-test",
  "http-body-util",
  "hyper",
+ "smoltcp",
  "tokio",
  "tracing",
  "tracing-subscriber",

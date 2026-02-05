@@ -70,6 +70,8 @@ def load_inventory():
             "private_ip": vm1_private_ip,
             "private_ip2": vm1_private_ip2,
             "vm_name": vm1_name,
+            "dpdk_interface": "eth1",  # Azure VM interface name
+            "is_local": False,
         }
     
     # VM2 (optional)
@@ -85,6 +87,8 @@ def load_inventory():
             "private_ip": vm2_private_ip,
             "private_ip2": vm2_private_ip2,
             "vm_name": vm2_name,
+            "dpdk_interface": "eth1",  # Azure VM interface name
+            "is_local": False,
         }
     
     return inventory

@@ -35,6 +35,7 @@
 //! ```
 
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use clap::{Parser, ValueEnum};
@@ -80,6 +81,18 @@ struct Args {
     /// Server port (used in DPDK mode)
     #[arg(short, long, default_value = "8080")]
     port: u16,
+
+    /// IP address for DPDK mode (required when interface is unbound for vfio-pci)
+    #[arg(long)]
+    ip_addr: Option<String>,
+
+    /// Gateway address for DPDK mode (defaults to 10.0.0.1)
+    #[arg(long)]
+    gateway: Option<String>,
+
+    /// Number of hardware queues (required when interface is unbound for vfio-pci)
+    #[arg(long)]
+    hw_queues: Option<usize>,
 
     /// Maximum number of queues for DPDK mode
     #[arg(long)]
@@ -157,15 +170,25 @@ async fn counter_handler_kimojio(_req: Request<Bytes>) -> Response<Bytes> {
 }
 
 /// Run the DPDK-based HTTP server
-fn run_dpdk_server(interface: &str, port: u16, max_queues: Option<usize>, backlog: usize) {
+fn run_dpdk_server(
+    interface: &str,
+    port: u16,
+    max_queues: Option<usize>,
+    backlog: usize,
+    ip_addr: Option<&str>,
+    gateway: Option<&str>,
+    hw_queues: Option<usize>,
+) {
     use dpdk_net::api::rte::eal::EalBuilder;
     use dpdk_net_test::app::dpdk_server_runner::DpdkServerRunner;
     use dpdk_net_test::app::http_server::Http1Server;
     use dpdk_net_test::manual::tcp::get_pci_addr;
-    use dpdk_net_test::util::ensure_hugepages;
+    // use dpdk_net_test::util::ensure_hugepages;
+    use smoltcp::wire::Ipv4Address;
 
     // Setup hugepages (user's responsibility before using the runner)
-    ensure_hugepages().expect("Failed to ensure hugepages");
+    // TODO: remove. Ansible does this.
+    // ensure_hugepages().expect("Failed to ensure hugepages");
 
     // Initialize DPDK EAL (user's responsibility before using the runner)
     let pci_addr = get_pci_addr(interface).expect("Failed to get PCI address");
@@ -174,10 +197,27 @@ fn run_dpdk_server(interface: &str, port: u16, max_queues: Option<usize>, backlo
         .init()
         .expect("Failed to initialize EAL");
 
-    let mut runner = DpdkServerRunner::new(interface)
-        .with_default_network_config()
-        .with_default_hw_queues()
-        .port(port);
+    let mut runner = DpdkServerRunner::new(interface);
+
+    // Configure network: use explicit IP/gateway if provided, otherwise auto-detect
+    if let Some(ip_str) = ip_addr {
+        let ip = Ipv4Address::from_str(ip_str).expect("Invalid IP address");
+        let gw = gateway
+            .map(|g| Ipv4Address::from_str(g).expect("Invalid gateway"))
+            .unwrap_or(Ipv4Address::new(10, 0, 0, 1));
+        runner = runner.ip_addr(ip).gateway(gw);
+    } else {
+        runner = runner.with_default_network_config();
+    }
+
+    // Configure hardware queues: use explicit value if provided, otherwise auto-detect
+    if let Some(queues) = hw_queues {
+        runner = runner.hw_queues(queues);
+    } else {
+        runner = runner.with_default_hw_queues();
+    }
+
+    runner = runner.port(port);
     if let Some(max_queues) = max_queues {
         runner = runner.max_queues(max_queues);
     }
@@ -227,11 +267,22 @@ fn main() {
                 mode = "dpdk",
                 interface = %args.interface,
                 port = args.port,
+                ip_addr = ?args.ip_addr,
+                gateway = ?args.gateway,
+                hw_queues = ?args.hw_queues,
                 max_queues = args.max_queues,
                 backlog = args.backlog,
                 "Starting HTTP benchmark server"
             );
-            run_dpdk_server(&args.interface, args.port, args.max_queues, args.backlog);
+            run_dpdk_server(
+                &args.interface,
+                args.port,
+                args.max_queues,
+                args.backlog,
+                args.ip_addr.as_deref(),
+                args.gateway.as_deref(),
+                args.hw_queues,
+            );
         }
         ServerMode::Kimojio => {
             use dpdk_net_test::app::kimojio_server::run_kimojio_thread_per_core_server;

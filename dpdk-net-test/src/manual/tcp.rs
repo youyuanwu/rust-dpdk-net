@@ -12,8 +12,86 @@ use crate::dpdk_test::{
     DpdkTestContextBuilder,
 };
 
-/// Get PCI address for a network interface
+/// Get PCI address for a network interface.
+///
+/// This function supports multiple scenarios:
+/// 1. Direct PCI device (e.g., mlx5 interface) - reads from sysfs
+/// 2. Virtio device (QEMU/KVM) - follows parent to find PCI address
+/// 3. Azure hv_netvsc - follows lower_ links to find VF
+/// 4. **Fallback**: If interface doesn't exist (unbound for DPDK), scans for
+///    virtio-net devices bound to vfio-pci
 pub fn get_pci_addr(interface: &str) -> Option<String> {
+    // First, try the normal path via interface
+    if let Some(addr) = get_pci_addr_from_interface(interface) {
+        return Some(addr);
+    }
+
+    // Fallback: Interface doesn't exist (likely unbound for DPDK use)
+    // Scan for virtio-net devices bound to vfio-pci
+    tracing::warn!(
+        interface,
+        "Interface not found, scanning for vfio-pci bound virtio-net devices"
+    );
+    if let Some(addr) = find_vfio_virtio_net() {
+        return Some(addr);
+    }
+
+    tracing::warn!(interface, "Could not find PCI address");
+    None
+}
+
+/// Find a virtio-net device bound to vfio-pci.
+///
+/// Scans /sys/bus/pci/devices/ for devices with:
+/// - vendor = 0x1af4 (Red Hat / Virtio)
+/// - device = 0x1000 (virtio-net)
+/// - driver = vfio-pci
+fn find_vfio_virtio_net() -> Option<String> {
+    let devices_dir = "/sys/bus/pci/devices";
+    let entries = fs::read_dir(devices_dir).ok()?;
+
+    for entry in entries.flatten() {
+        let pci_addr = entry.file_name().to_str()?.to_string();
+        let device_path = entry.path();
+
+        // Check vendor (0x1af4 = Red Hat / Virtio)
+        let vendor_path = device_path.join("vendor");
+        let vendor = fs::read_to_string(&vendor_path).ok()?;
+        if vendor.trim() != "0x1af4" {
+            continue;
+        }
+
+        // Check device ID (0x1000 = virtio-net)
+        let device_id_path = device_path.join("device");
+        let device_id = fs::read_to_string(&device_id_path).ok()?;
+        if device_id.trim() != "0x1000" {
+            continue;
+        }
+
+        // Check if bound to vfio-pci
+        let driver_path = device_path.join("driver");
+        if let Ok(driver_link) = fs::read_link(&driver_path)
+            && let Some(driver_name) = driver_link.file_name()
+            && driver_name.to_str() == Some("vfio-pci")
+        {
+            tracing::info!(pci_addr, "Found virtio-net device bound to vfio-pci");
+            return Some(pci_addr);
+        }
+    }
+
+    None
+}
+
+/// Get PCI address from a network interface via sysfs.
+///
+/// This handles:
+/// - Direct PCI devices (e.g., mlx5) - device symlink points to PCI address
+/// - Azure hv_netvsc - follows lower_ links to find the VF's PCI address
+///
+/// Note: Does NOT handle virtio devices. For virtio, the interface exists only
+/// when bound to kernel driver. Once bound to vfio-pci for DPDK use, the interface
+/// disappears and we must use `find_vfio_virtio_net()` instead.
+fn get_pci_addr_from_interface(interface: &str) -> Option<String> {
     let path = format!("/sys/class/net/{}/device", interface);
     let link = fs::read_link(&path).ok()?;
     let filename = link.file_name()?.to_str()?;
@@ -22,6 +100,16 @@ pub fn get_pci_addr(interface: &str) -> Option<String> {
     if filename.contains(':') && filename.contains('.') {
         tracing::debug!(interface, pci_addr = filename, "Found PCI address directly");
         return Some(filename.to_string());
+    }
+
+    // Skip virtio devices - if interface exists, device is kernel-bound and unusable by DPDK
+    // The vfio-pci fallback in get_pci_addr() will find it after binding
+    if filename.starts_with("virtio") {
+        tracing::warn!(
+            interface,
+            "Virtio device still bound to kernel driver, trying vfio-pci fallback"
+        );
+        return None;
     }
 
     tracing::debug!(
@@ -66,7 +154,6 @@ pub fn get_pci_addr(interface: &str) -> Option<String> {
         }
     }
 
-    tracing::warn!(interface, "Could not find PCI address");
     None
 }
 
