@@ -15,9 +15,9 @@ mlx5_core:  `Ethernet controller: Mellanox Technologies MT27800 Family [ConnectX
 Azure Bench Result:
 - [Standard_D2s_v5](./Azure/BENCHMARK_d2s.md): 2 cpu, 2 queue pair.
 - [Standard_D4s_v5](./Azure/BENCHMARK_d4s.md): 4 cpu, 4 queue pair.
-- [Standard_D8s_v5](./Azure/BENCHMARK_d8s.md): 8 cpu, 4 queue pair.
+- [Standard_D8s_v5](./Azure/BENCHMARK_d8s.md): 8 cpu, 8 queue pair.
 
-Note: 
+Note:
 * In some vm queue is less than cpu, so the machine is not fully utilized by the current bench server, which creates 1 thread per queue and process http request on that thread.
 But the above vm sizes has 1 queue per cpu.
-
+* The bench-test tokio client runs on `Standard_D8s_v5` VM. Itself has perf bottle neck, and manifests in the `Standard_D8s_v5` server tests. (TODO: use DPDK as the test client.)

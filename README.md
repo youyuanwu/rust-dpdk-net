@@ -11,11 +11,11 @@ High-level async TCP/IP networking for Rust using [DPDK](https://github.com/DPDK
 
 - **[DPDK](https://github.com/DPDK/dpdk)** - Kernel-bypass packet I/O directly to/from the NIC
 - **[smoltcp](https://github.com/smoltcp-rs/smoltcp)** - User-space TCP/IP stack
-- **Async runtime** - Uses tokio for task scheduling (any async runtime would work)
+- **Async runtime** - Uses rust async runtime for task scheduling
 
 This enables building network applications (HTTP servers, proxies, etc.) that bypass the kernel network stack entirely, achieving lower latency and higher throughput.
 
-[Benchmarks](docs/Bench/Benchmark.md) shows 10% to 25% throughput improvement than tokio server. 
+[Benchmarks](docs/Bench/Benchmark.md) shows 2X throughput and half latency than tokio server. 
 
 ## Architecture
 
@@ -107,9 +107,7 @@ sudo ./target/release/examples/dpdk_http_server --interface eth1
 This project is under active development. The core functionality works, but the API surface is evolving.
 
 ## References
-
-- [rust-dpdk](https://github.com/ANLAB-KAIST/rust-dpdk) - DPDK binding generation approach
-- [rpkt](https://github.com/duanjp8617/rpkt) - Rust packet processing
+[References](./docs/References/OtherProjects.md)
 
 ## License
 
