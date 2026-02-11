@@ -21,16 +21,16 @@
 # Workaround: Use default /usr/local prefix until the build.rs is updated to
 # manually emit link flags in the correct order.
 
-# _dpdk_pkgconfig="/opt/dpdk/lib/x86_64-linux-gnu/pkgconfig"
-# case ":${PKG_CONFIG_PATH}:" in
-#     *":${_dpdk_pkgconfig}:"*) ;;
-#     *) export PKG_CONFIG_PATH="${_dpdk_pkgconfig}${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" ;;
-# esac
-# unset _dpdk_pkgconfig
+_dpdk_pkgconfig="/usr/local/lib/x86_64-linux-gnu/pkgconfig"
+case ":${PKG_CONFIG_PATH}:" in
+    *":${_dpdk_pkgconfig}:"*) ;;
+    *) export PKG_CONFIG_PATH="${_dpdk_pkgconfig}${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" ;;
+esac
+unset _dpdk_pkgconfig
 
-# _dpdk_bin="/opt/dpdk/bin"
-# case ":${PATH}:" in
-#     *":${_dpdk_bin}:"*) ;;
-#     *) export PATH="${_dpdk_bin}${PATH:+:$PATH}" ;;
-# esac
-# unset _dpdk_bin
+_dpdk_bin="/usr/local/bin"
+case ":${PATH}:" in
+    *":${_dpdk_bin}:"*) ;;
+    *) export PATH="${_dpdk_bin}${PATH:+:$PATH}" ;;
+esac
+unset _dpdk_bin

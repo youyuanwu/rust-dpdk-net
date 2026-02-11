@@ -79,3 +79,12 @@ uint16_t rust_eth_tx_burst(uint16_t port_id, uint16_t queue_id,
                            struct rte_mbuf **tx_pkts, uint16_t nb_pkts) {
     return rte_eth_tx_burst(port_id, queue_id, tx_pkts, nb_pkts);
 }
+
+// Lcore wrapper implementations
+unsigned rust_rte_lcore_id(void) {
+    return rte_lcore_id();
+}
+
+unsigned rust_rte_get_main_lcore(void) {
+    return rte_get_main_lcore();
+}

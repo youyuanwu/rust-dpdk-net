@@ -2,6 +2,8 @@
 
 pub mod eal;
 
+pub mod lcore;
+
 pub mod pktmbuf;
 
 pub mod eth;

@@ -74,6 +74,20 @@ fn generate_bindings(include_dirs: &[PathBuf]) {
         .allowlist_function("rte_eth_dev_rss_hash_conf_get")
         .allowlist_function("rte_eal_init")
         .allowlist_function("rte_eal_cleanup")
+        // Lcore management functions
+        .allowlist_function("rte_eal_remote_launch")
+        .allowlist_function("rte_eal_mp_wait_lcore")
+        .allowlist_function("rte_eal_wait_lcore")
+        .allowlist_function("rte_eal_get_lcore_state")
+        .allowlist_function("rte_eal_lcore_role")
+        .allowlist_function("rte_lcore_count")
+        .allowlist_function("rte_lcore_is_enabled")
+        .allowlist_function("rte_lcore_to_socket_id")
+        .allowlist_function("rte_lcore_to_cpu_id")
+        .allowlist_function("rte_get_next_lcore")
+        // Lcore wrapper functions for inlines
+        .allowlist_function("rust_rte_lcore_id")
+        .allowlist_function("rust_rte_get_main_lcore")
         // generate useful dpdk types
         .allowlist_type("rte_eth_conf")
         .allowlist_type("rte_eth_dev_info")
@@ -82,8 +96,13 @@ fn generate_bindings(include_dirs: &[PathBuf]) {
         .allowlist_type("rte_mbuf")
         .allowlist_type("rte_eth_stats")
         .allowlist_type("rte_proc_type_t")
+        // Lcore types
+        .allowlist_type("rte_lcore_state_t")
+        .allowlist_type("rte_lcore_role_t")
+        .allowlist_type("lcore_function_t")
         // generate useful dpdk macros defined in rte_build_config.h.
         .allowlist_var("RTE_MAX_LCORE")
+        .allowlist_var("LCORE_ID_ANY")
         .allowlist_var("RTE_MAX_NUMA_NODES")
         .allowlist_var("RTE_MBUF_MAX_NB_SEGS")
         .allowlist_var("RTE_MBUF_DEFAULT_DATAROOM")

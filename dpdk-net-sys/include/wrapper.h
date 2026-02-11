@@ -6,6 +6,8 @@
 #include <rte_eal.h>
 #include <rte_ethdev.h>
 #include <rte_mbuf.h>
+#include <rte_lcore.h>
+#include <rte_launch.h>
 
 // Wrapper functions for accessing rte_errno (per-lcore macro)
 int rust_get_rte_errno(void);
@@ -33,6 +35,10 @@ uint16_t rust_eth_rx_burst(uint16_t port_id, uint16_t queue_id,
                            struct rte_mbuf **rx_pkts, uint16_t nb_pkts);
 uint16_t rust_eth_tx_burst(uint16_t port_id, uint16_t queue_id,
                            struct rte_mbuf **tx_pkts, uint16_t nb_pkts);
+
+// Lcore wrapper functions (for inline functions)
+unsigned rust_rte_lcore_id(void);
+unsigned rust_rte_get_main_lcore(void);
 
 // RSS hash type constants (expanded from RTE_BIT64 macros for bindgen)
 static const uint64_t RUST_RTE_ETH_RSS_IPV4 = RTE_ETH_RSS_IPV4;
