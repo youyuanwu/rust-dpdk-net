@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "dpdk-net", "dpdk-net-sys",
+  "dpdk-net", "dpdk-net-axum", "dpdk-net-sys",
   "dpdk-net-test",
   "tests/dpdk-bench-client",
   "tests/dpdk-bench-server",
@@ -34,6 +34,9 @@ kimojio = { version = "0.14", default-features = false }
 pkg-config = "0.3"
 bindgen = "0.72"
 cc = "1.2"
+pkgconf = "0.1"
+
+axum = { version = "0.8", default-features = false, features = [] }
 
 # crate in this workspace
 dpdk-net = { path = "dpdk-net", version = "0.1.0" }

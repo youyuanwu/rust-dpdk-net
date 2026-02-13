@@ -9,7 +9,13 @@ fn main() {
     let cfg = pkg_config::Config::new()
         .atleast_version("25.11.0")
         .statik(true)
+        .cargo_metadata(false)
         .probe("libdpdk")
+        .unwrap();
+
+    // Use pkgconf to emit cargo metadata.
+    pkgconf::PkgConfigParser::new()
+        .probe_and_emit(["libdpdk"], None)
         .unwrap();
 
     generate_bindings(&cfg.include_paths);

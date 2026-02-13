@@ -16,3 +16,4 @@ include = ["build.rs", "include/**", "src/**", "README.md", "LICENSE"]
 pkg-config.workspace = true
 bindgen.workspace = true
 cc.workspace = true
+pkgconf.workspace = true
