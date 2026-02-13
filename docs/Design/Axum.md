@@ -2,19 +2,30 @@
 
 This document describes the design for integrating `dpdk-net` with [axum](https://github.com/tokio-rs/axum), the popular async web framework built on top of hyper and tokio.
 
+The axum integration is built **on top of `DpdkApp`** (see [App.md](App.md)). `DpdkApp` handles EAL lcores, queues, reactors, and shutdown; the axum layer adds only HTTP serving.
+
+## Implementation Status
+
+✅ **Implemented** in `dpdk-net-axum` crate:
+- `serve()` function — accepts `TcpListener`, `Router`, `CancellationToken`
+- Uses `AutoBuilder` from hyper-util with `LocalExecutor` from `dpdk-net-hyper`
+- Bridges axum's tower `Service` to hyper via `TowerToHyperService`
+- Auto-detects HTTP/1.1 and HTTP/2 (cleartext h2c)
+- Graceful shutdown via `CancellationToken`
+- Re-exported from `dpdk_net_axum::serve`
+
+🔲 **Not yet implemented:**
+- `serve_with_config()` / `ServeConfig` (HTTP/2 tuning, max connections)
+
+✅ **Tests:**
+- `dpdk-net-axum/tests/axum_client_test.rs` — axum server + `DpdkHttpClient` GET requests on same lcore
+- `dpdk-net-axum/tests/app_echo_test.rs` — raw TCP echo test for `DpdkApp`
+
 ---
 
-## Overview
+## Design
 
-Use axum's `Router` as a `tower::Service` and serve it with hyper directly, using a `LocalExecutor` to handle `!Send` futures.
-
-**Key insight:** We bypass `axum::serve()` entirely and use hyper-util's `AutoBuilder` with our custom executor.
-
----
-
-## Background: The `!Send` Constraint
-
-dpdk-net's sockets use `Rc<RefCell<...>>` internally for zero-copy access to the reactor state, making them `!Send`.
+**Key insight:** We bypass `axum::serve()` entirely because it requires `Send` streams. Instead we use hyper-util's `AutoBuilder` with a `LocalExecutor` (from `dpdk-net-hyper`) that spawns tasks via `tokio::task::spawn_local`.
 
 | Constraint | dpdk-net | Standard axum |
 |------------|----------|---------------|
@@ -23,202 +34,52 @@ dpdk-net's sockets use `Rc<RefCell<...>>` internally for zero-copy access to the
 | Executor | `LocalExecutor` | `TokioExecutor` |
 | Listener | Custom `TcpListener` | `TcpListener` from tokio |
 
-Standard `axum::serve()` requires `Send` bounds that our types cannot satisfy. The solution is to serve axum's `Router` via hyper directly.
+### How It Works
+
+1. `serve()` runs an accept loop with `tokio::select!` on shutdown + `listener.accept()`
+2. Each accepted stream is wrapped: `TokioIo::new(TokioTcpStream::new(stream))`
+3. `Router` is cloned per connection and wrapped with `TowerToHyperService` to bridge tower's `Service` to hyper's `Service`
+4. `AutoBuilder::new(LocalExecutor).serve_connection(io, service)` handles HTTP/1.1 or HTTP/2
+
+**Key detail:** `serve_connection()` requires `I: Read + Write + Unpin + 'static` but does **not** require `Send` on `I`. Only `serve_connection_with_upgrades()` requires `Send`. This is why our `!Send` streams work.
+
+See: [serve.rs](../../dpdk-net-axum/src/serve.rs)
 
 ---
 
-## Design
-
-### LocalExecutor
-
-```rust
-/// Executor for !Send futures that uses spawn_local.
-#[derive(Clone, Copy)]
-pub struct LocalExecutor;
-
-impl<F> hyper::rt::Executor<F> for LocalExecutor
-where
-    F: std::future::Future + 'static,  // Note: no Send bound
-    F::Output: 'static,
-{
-    fn execute(&self, fut: F) {
-        tokio::task::spawn_local(fut);
-    }
-}
-```
-
-### serve() Function
+## API
 
 ```rust
 /// Serve an axum Router on a dpdk-net TcpListener.
-/// 
-/// The `shutdown` future completes when the server should stop accepting connections.
-pub async fn serve<F>(
-    mut listener: TcpListener,
-    app: Router,
-    shutdown: F,
-)
-where
-    F: Future<Output = ()> + 'static,
-{
-    let make_service = app.into_make_service();
-    tokio::pin!(shutdown);
+/// Runs until the `shutdown` token is cancelled.
+pub async fn serve(listener: TcpListener, app: Router, shutdown: CancellationToken);
+```
 
-    loop {
-        tokio::select! {
-            _ = &mut shutdown => break,
-            result = listener.accept() => {
-                match result {
-                    Ok(stream) => {
-                        let service = make_service.clone();
-                        let io = TokioIo::new(TokioTcpStream::new(stream));
-                        
-                        tokio::task::spawn_local(async move {
-                            let service = tower::MakeService::call(&mut service.clone(), ())
-                                .await
-                                .expect("infallible");
-                            
-                            let _ = AutoBuilder::new(LocalExecutor)
-                                .serve_connection(io, service)
-                                .await;
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!(error = ?e, "Accept failed");
-                    }
-                }
-            }
+### Usage
+
+```rust
+DpdkApp::new()
+    .eth_dev(0)
+    .ip(Ipv4Address::new(10, 0, 0, 10))
+    .gateway(Ipv4Address::new(10, 0, 0, 1))
+    .run(shutdown, move |ctx: WorkerContext| {
+        let app = app.clone();
+        async move {
+            let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
+            serve(listener, app, ctx.shutdown).await;
         }
-    }
-}
+    });
 ```
 
 ---
 
 ## Limitations
 
-### 1. Cannot Use `axum::serve()` Directly
-
-```rust
-// ❌ This won't work - requires Send bounds
-axum::serve(listener, app).await;
-
-// ✅ Use our serve() instead
-dpdk_net_axum::serve(listener, app, shutdown_signal).await;
-```
-
-### 2. Single-Threaded Per Queue
-
-Each queue runs on a dedicated thread with its own tokio `LocalSet`. Connections on a queue cannot migrate to other threads.
-
-```
-Queue 0 Thread: [Reactor] → [LocalSet] → [Connections A, B, C]
-Queue 1 Thread: [Reactor] → [LocalSet] → [Connections D, E, F]
-```
-
-**Implication:** Connection handling is pinned to the queue that received the initial SYN packet (determined by RSS hash).
-
-### 3. State Must Be `Send + Sync` for Multi-Queue
-
-When using `DpdkServerRunner` with multiple queues, shared state must be thread-safe:
-
-```rust
-// ✅ Good - Arc<AtomicU64> is Send + Sync
-let counter = Arc::new(AtomicU64::new(0));
-let app = Router::new()
-    .route("/", get(handler))
-    .with_state(counter);
-
-// ❌ Bad - Rc is !Send
-let counter = Rc::new(Cell::new(0));
-```
-
-### 4. No WebSocket Upgrade with Task Migration
-
-WebSocket connections stay on the same thread as the HTTP upgrade. They cannot be moved to a dedicated WebSocket thread pool.
-
-### 5. Extractors That Require `Send`
-
-Some axum extractors or middleware may require `Send` bounds on the response body. These won't work:
-
-```rust
-// May not compile if middleware requires Send bodies
-app.layer(SomeMiddlewareThatRequiresSend)
-```
-
-Most standard extractors (`Json`, `Query`, `Path`, `State`) work fine.
-
----
-
-## API Surface
-
-```rust
-/// Serve an axum Router on a dpdk-net TcpListener.
-///
-/// The `shutdown` future completes when the server should stop.
-pub async fn serve<F>(
-    listener: TcpListener,
-    app: Router,
-    shutdown: F,
-)
-where
-    F: Future<Output = ()> + 'static;
-
-/// Serve with additional configuration.
-pub async fn serve_with_config<F>(
-    listener: TcpListener,
-    app: Router,
-    shutdown: F,
-    config: ServeConfig,
-)
-where
-    F: Future<Output = ()> + 'static;
-
-/// Configuration for the HTTP server.
-pub struct ServeConfig {
-    pub http2: Http2Config,
-    pub max_connections: Option<usize>,
-}
-
-pub struct Http2Config {
-    pub max_concurrent_streams: Option<u32>,
-    pub initial_stream_window_size: Option<u32>,
-    pub initial_connection_window_size: Option<u32>,
-}
-```
-
----
-
-## Usage with DpdkServerRunner
-
-```rust
-use axum::{Router, routing::get};
-use dpdk_net_axum::serve;
-use dpdk_net_test::app::dpdk_server_runner::DpdkServerRunner;
-
-async fn hello() -> &'static str {
-    "Hello from DPDK + Axum!"
-}
-
-fn main() {
-    // ... EAL init, hugepages setup ...
-    
-    let app = Router::new()
-        .route("/", get(hello))
-        .route("/health", get(|| async { "OK" }));
-    
-    DpdkServerRunner::new("eth1")
-        .with_default_network_config()
-        .with_default_hw_queues()
-        .port(8080)
-        .run(move |ctx| {
-            let app = app.clone();
-            async move {
-                serve(ctx.listener, app, ctx.cancel.cancelled()).await
-            }
-        });
-}
-```
+1. **Cannot use `axum::serve()` directly** — requires `Send` bounds. Use `dpdk_net_axum::serve()` instead.
+2. **Single-threaded per lcore** — connections are pinned to the lcore that received the SYN (via RSS hash).
+3. **Shared state must be `Send + Sync`** — each lcore is a separate OS thread. Use `Arc<AtomicU64>`, not `Rc<Cell<_>>`.
+4. **No WebSocket upgrade with task migration** — WebSocket connections stay on the same lcore.
+5. **Some middleware may not compile** — if it requires `Send` on response bodies. Standard extractors (`Json`, `Query`, `Path`, `State`) work fine.
 
 ---
 
@@ -227,24 +88,17 @@ fn main() {
 ```
 dpdk-net-axum/
 ├── Cargo.toml
-└── src/
-    ├── lib.rs         # serve(), ServeConfig, re-exports
-    ├── executor.rs    # LocalExecutor
-    └── serve.rs       # Serve implementation
+├── src/
+│   ├── lib.rs         # Re-exports: DpdkApp, WorkerContext, serve
+│   ├── app.rs         # DpdkApp builder and run logic
+│   ├── context.rs     # WorkerContext definition
+│   └── serve.rs       # serve()
+└── tests/
+    ├── app_echo_test.rs       # Raw TCP echo test
+    └── axum_client_test.rs    # Axum server + HTTP client test
 ```
 
-### Dependencies
-
-```toml
-[dependencies]
-axum = { version = "0.8" }
-dpdk-net = { path = "../dpdk-net" }
-hyper = { version = "1.0" }
-hyper-util = { version = "0.1", features = ["server-auto"] }
-tokio = { version = "1", features = ["rt", "macros"] }
-tower = { version = "0.5" }
-tracing = "0.1"
-```
+No `tower` dependency needed — `hyper_util::service::TowerToHyperService` handles the bridging.
 
 ---
 
@@ -257,8 +111,8 @@ tracing = "0.1"
 | State extraction | ✅ | ✅ |
 | HTTP/1.1 | ✅ | ✅ |
 | HTTP/2 (h2c) | ✅ | ✅ |
-| Graceful shutdown | ✅ | ✅ (via shutdown future) |
-| Multi-threaded | ✅ | ❌ (single-threaded per queue) |
+| Graceful shutdown | ✅ | ✅ (via `CancellationToken`) |
+| Multi-threaded | ✅ | ❌ (single-threaded per lcore) |
 | `Send` streams | Required | Not required |
 | Cross-thread task spawn | ✅ | ❌ |
 
@@ -266,7 +120,11 @@ tracing = "0.1"
 
 ## References
 
+- [DpdkApp Design](App.md)
+- [HTTP Client Design](Client.md)
+- [Implementation: serve.rs](../../dpdk-net-axum/src/serve.rs)
+- [Test: axum_client_test.rs](../../dpdk-net-axum/tests/axum_client_test.rs)
 - [axum source - serve.rs](https://github.com/tokio-rs/axum/blob/main/axum/src/serve.rs)
 - [hyper-util AutoBuilder](https://docs.rs/hyper-util/latest/hyper_util/server/conn/auto/struct.Builder.html)
-- [tower Service trait](https://docs.rs/tower/latest/tower/trait.Service.html)
-- [Current hyper integration](../../dpdk-net-test/src/app/http_server.rs)
+- [hyper-util TowerToHyperService](https://docs.rs/hyper-util/latest/hyper_util/service/struct.TowerToHyperService.html)
+- [Lower-level hyper integration](../../dpdk-net-test/src/app/http_server.rs)

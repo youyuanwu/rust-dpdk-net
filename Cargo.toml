@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "dpdk-net", "dpdk-net-axum", "dpdk-net-sys",
+  "dpdk-net", "dpdk-net-axum", "dpdk-net-hyper", "dpdk-net-sys",
   "dpdk-net-test",
   "tests/dpdk-bench-client",
   "tests/dpdk-bench-server",
@@ -14,6 +14,7 @@ package.license = "MIT"
 
 [workspace.dependencies]
 arc-swap = "1.8"
+bytes = "1"
 clap = { version = "4", features = ["derive"] }
 ctrlc = { version = "3", features = ["termination"] }
 smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "async"] }
@@ -26,7 +27,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 hyper = { version = "1", features = ["http1", "http2", "server", "client"] }
 http-body-util = "0.1"
-hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
 socket2 = { version = "0.6", features = ["all"] }
 httparse = "1.10"
 kimojio = { version = "0.14", default-features = false }
@@ -40,5 +41,6 @@ axum = { version = "0.8", default-features = false, features = [] }
 
 # crate in this workspace
 dpdk-net = { path = "dpdk-net", version = "0.1.0" }
+dpdk-net-hyper = { path = "dpdk-net-hyper", version = "0.1.0" }
 dpdk-net-sys = { path = "dpdk-net-sys", version = "0.1.0" }
 dpdk-net-test = { path = "dpdk-net-test" }

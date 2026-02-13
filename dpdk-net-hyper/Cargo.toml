@@ -1,0 +1,23 @@
+[package]
+name = "dpdk-net-hyper"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bytes.workspace = true
+dpdk-net.workspace = true
+smoltcp.workspace = true
+hyper = { workspace = true, features = ["client", "http1", "http2"] }
+hyper-util = { workspace = true, features = ["tokio"] }
+http-body-util.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+tracing.workspace = true
+
+[dev-dependencies]
+dpdk-net-test.workspace = true
+serial_test.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "macros"] }

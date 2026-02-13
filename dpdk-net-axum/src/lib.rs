@@ -71,6 +71,8 @@
 
 mod app;
 mod context;
+mod serve;
 
 pub use app::DpdkApp;
 pub use context::WorkerContext;
+pub use serve::serve;

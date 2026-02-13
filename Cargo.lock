@@ -431,11 +431,31 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "dpdk-net",
+ "dpdk-net-hyper",
  "dpdk-net-test",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "serial_test",
  "smoltcp",
  "tokio",
  "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "dpdk-net-hyper"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "dpdk-net",
+ "dpdk-net-test",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "serial_test",
+ "smoltcp",
+ "tokio",
  "tracing",
 ]
 
