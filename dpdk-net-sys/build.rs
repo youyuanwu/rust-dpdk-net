@@ -5,20 +5,28 @@ fn main() {
     println!("cargo:rerun-if-changed=include/wrapper.h");
     println!("cargo:rerun-if-changed=src/wrapper.c");
 
-    // Use pkg-config to find DPDK with static linking preferred
-    let cfg = pkg_config::Config::new()
-        .atleast_version("25.11.0")
-        .statik(true)
-        .cargo_metadata(false)
-        .probe("libdpdk")
+    // Use pkgconf to get linker and compiler flags
+    let pkg = pkgconf::PkgConfigParser::new()
+        .probe(["libdpdk"], None)
         .unwrap();
 
-    // Use pkgconf to emit cargo metadata.
-    pkgconf::PkgConfigParser::new()
-        .probe_and_emit(["libdpdk"], None)
-        .unwrap();
+    // Emit cargo metadata for linking (no_bundle=true for -sys crates)
+    pkgconf::emit_cargo_metadata(&pkg.libs, true);
 
-    generate_bindings(&cfg.include_paths);
+    // Extract include paths from cflags for bindgen
+    let include_paths: Vec<PathBuf> = pkg
+        .cflags
+        .iter()
+        .filter_map(|flag| {
+            if let pkgconf::CompilerFlag::IncludePath(path) = flag {
+                Some(path.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    generate_bindings(&include_paths);
 }
 
 fn generate_bindings(include_dirs: &[PathBuf]) {

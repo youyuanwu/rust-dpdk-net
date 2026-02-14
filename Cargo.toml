@@ -32,10 +32,9 @@ socket2 = { version = "0.6", features = ["all"] }
 httparse = "1.10"
 kimojio = { version = "0.14", default-features = false }
 
-pkg-config = "0.3"
 bindgen = "0.72"
 cc = "1.2"
-pkgconf = "0.1"
+pkgconf = "0.2"
 
 axum = { version = "0.8", default-features = false, features = [] }
 
