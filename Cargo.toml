@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "dpdk-net", "dpdk-net-axum", "dpdk-net-util", "dpdk-net-sys",
   "dpdk-net-test", "dpdk-net-tonic",
+  "dpdk-net-sys-gen",
   "tests/dpdk-bench-client",
   "tests/dpdk-bench-server",
 ]

@@ -1,6 +1,7 @@
 // Ethernet Device API
 // See /usr/local/include/rte_ethdev.h
 
+use std::fmt;
 use std::mem::MaybeUninit;
 
 use dpdk_net_sys::ffi;
@@ -272,7 +273,7 @@ impl EthConf {
 }
 
 /// RX queue configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RxQueueConf {
     /// Number of descriptors
     pub nb_desc: u16,
@@ -289,6 +290,16 @@ impl Default for RxQueueConf {
             socket_id: -1,
             conf: None,
         }
+    }
+}
+
+impl fmt::Debug for RxQueueConf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RxQueueConf")
+            .field("nb_desc", &self.nb_desc)
+            .field("socket_id", &self.socket_id)
+            .field("conf", &self.conf.as_ref().map(|_| "<rte_eth_rxconf>"))
+            .finish()
     }
 }
 
@@ -322,7 +333,7 @@ impl RxQueueConf {
 }
 
 /// TX queue configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TxQueueConf {
     /// Number of descriptors
     pub nb_desc: u16,
@@ -339,6 +350,16 @@ impl Default for TxQueueConf {
             socket_id: -1,
             conf: None,
         }
+    }
+}
+
+impl fmt::Debug for TxQueueConf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TxQueueConf")
+            .field("nb_desc", &self.nb_desc)
+            .field("socket_id", &self.socket_id)
+            .field("conf", &self.conf.as_ref().map(|_| "<rte_eth_txconf>"))
+            .finish()
     }
 }
 

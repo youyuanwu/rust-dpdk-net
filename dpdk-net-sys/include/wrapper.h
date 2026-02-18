@@ -40,7 +40,15 @@ uint16_t rust_eth_tx_burst(uint16_t port_id, uint16_t queue_id,
 unsigned rust_rte_lcore_id(void);
 unsigned rust_rte_get_main_lcore(void);
 
-// RSS hash type constants (expanded from RTE_BIT64 macros for bindgen)
+// Build-config constants (expanded from #define macros for bnd-winmd)
+static const unsigned int RUST_RTE_MAX_LCORE = RTE_MAX_LCORE;
+static const unsigned int RUST_RTE_MAX_NUMA_NODES = RTE_MAX_NUMA_NODES;
+static const uint16_t RUST_RTE_MBUF_DEFAULT_DATAROOM = RTE_MBUF_DEFAULT_DATAROOM;
+static const uint16_t RUST_RTE_PKTMBUF_HEADROOM = RTE_PKTMBUF_HEADROOM;
+static const uint16_t RUST_RTE_MBUF_MAX_NB_SEGS = RTE_MBUF_MAX_NB_SEGS;
+static const uint32_t RUST_LCORE_ID_ANY = LCORE_ID_ANY;
+
+// RSS hash type constants (expanded from RTE_BIT64 macros for bnd-winmd)
 static const uint64_t RUST_RTE_ETH_RSS_IPV4 = RTE_ETH_RSS_IPV4;
 static const uint64_t RUST_RTE_ETH_RSS_FRAG_IPV4 = RTE_ETH_RSS_FRAG_IPV4;
 static const uint64_t RUST_RTE_ETH_RSS_NONFRAG_IPV4_TCP = RTE_ETH_RSS_NONFRAG_IPV4_TCP;
