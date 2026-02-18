@@ -1,0 +1,82 @@
+# The wrapper.h include path is static; DPDK system include paths
+# are appended at runtime by main.rs via pkgconf.
+include_paths = ["../dpdk-net-sys/include", "/usr/include", "/usr/include/x86_64-linux-gnu"]
+
+[output]
+name = "dpdk"
+file = "dpdk.winmd"
+
+# ── Wrapper (our C shims for inline/macro functions) ────────
+# wrapper.h includes rte_config.h, rte_eal.h, rte_ethdev.h,
+# rte_mbuf.h, rte_lcore.h, rte_launch.h transitively.
+[[partition]]
+namespace = "dpdk.wrapper"
+library   = "dpdk_dummy"
+headers   = ["wrapper.h"]
+traverse  = ["wrapper.h"]
+
+# ── EAL ─────────────────────────────────────────────────────
+# rte_eal.h includes rte_config.h transitively.
+[[partition]]
+namespace = "dpdk.eal"
+library   = "dpdk_dummy"
+headers   = ["rte_eal.h"]
+traverse  = ["rte_eal.h", "rte_pci_dev_feature_defs.h", "bits/types/struct_timespec.h"]
+
+# ── Lcore ────────────────────────────────────────────────────
+# rte_lcore.h includes rte_config.h, rte_eal.h, rte_launch.h,
+# rte_thread.h transitively.
+[[partition]]
+namespace = "dpdk.lcore"
+library   = "dpdk_dummy"
+headers   = ["rte_lcore.h"]
+traverse  = ["rte_lcore.h", "bits/types/struct_FILE.h"]
+
+# ── Launch ───────────────────────────────────────────────────
+# rte_launch.h has zero includes — fully standalone.
+[[partition]]
+namespace = "dpdk.launch"
+library   = "dpdk_dummy"
+headers   = ["rte_launch.h"]
+traverse  = ["rte_launch.h"]
+
+# ── Thread ───────────────────────────────────────────────────
+# rte_thread.h includes only rte_os.h, rte_compat.h.
+[[partition]]
+namespace = "dpdk.thread"
+library   = "dpdk_dummy"
+headers   = ["rte_thread.h"]
+traverse  = ["rte_thread.h"]
+
+# ── Mempool ──────────────────────────────────────────────────
+# rte_mempool.h includes rte_config.h, rte_lcore.h transitively.
+# rte_memzone.h and rte_ring.h are transitively included and
+# define types referenced in rte_mempool structs/functions.
+[[partition]]
+namespace = "dpdk.mempool"
+library   = "dpdk_dummy"
+headers   = ["rte_mempool.h"]
+traverse  = ["rte_mempool.h", "rte_memzone.h", "rte_ring.h", "rte_ring_core.h", "bits/types/struct_FILE.h", "generic/rte_spinlock.h"]
+
+# ── Mbuf ─────────────────────────────────────────────────────
+# rte_mbuf.h includes rte_mempool.h transitively.
+# rte_mbuf_core.h defines struct rte_mbuf and rte_mbuf_ext_shared_info.
+[[partition]]
+namespace = "dpdk.mbuf"
+library   = "dpdk_dummy"
+headers   = ["rte_mbuf.h"]
+traverse  = ["rte_mbuf.h", "rte_mbuf_core.h", "bits/types/struct_FILE.h"]
+
+# ── Ethernet device ─────────────────────────────────────────
+# rte_ethdev.h includes rte_config.h transitively.
+# Transitive headers that define types used in ethdev API:
+#   rte_ether.h        → struct rte_ether_addr
+#   rte_ethdev_core.h  → struct rte_eth_fp_ops, rte_eth_recycle_rxq_info
+#   rte_dev.h          → struct rte_device, rte_dev_iterator
+#   rte_dev_info.h     → struct rte_dev_eeprom_info, rte_dev_reg_info
+#   rte_cman.h         → struct rte_cman_red_params
+[[partition]]
+namespace = "dpdk.ethdev"
+library   = "dpdk_dummy"
+headers   = ["rte_ethdev.h"]
+traverse  = ["rte_ethdev.h", "rte_ether.h", "rte_ethdev_core.h", "rte_dev.h", "rte_dev_info.h", "rte_cman.h", "bits/types/struct_FILE.h", "generic/rte_power_intrinsics.h", "rte_devargs.h"]

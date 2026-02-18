@@ -11,8 +11,21 @@ description = "DPDK ffi for dpdk-net"
 include = ["build.rs", "include/**", "src/**", "README.md", "LICENSE"]
 
 [dependencies]
+windows-link = "0.2"
 
 [build-dependencies]
-bindgen.workspace = true
 cc.workspace = true
 pkgconf.workspace = true
+
+[features]
+default = ["eal", "ethdev", "launch", "lcore", "mbuf", "mempool", "thread", "wrapper"]
+Foundation = []
+# generated features
+eal = ["Foundation"]
+ethdev = ["Foundation"]
+launch = ["Foundation"]
+lcore = ["Foundation"]
+mbuf = ["Foundation"]
+mempool = ["Foundation"]
+thread = ["Foundation"]
+wrapper = ["Foundation"]
