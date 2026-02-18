@@ -39,7 +39,7 @@ pub mod pool;
 
 pub use client::{ClientConfig, DpdkHttpClient};
 pub use connect::{http1_connect, http2_connect};
-pub use connection::{Connection, HttpVersion};
+pub use connection::{Connection, HttpVersion, ResponseFuture};
 pub use error::Error;
 pub use executor::LocalExecutor;
 pub use pool::ConnectionPool;

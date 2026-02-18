@@ -45,24 +45,14 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev
 
+    - uses: taiki-e/install-action@protoc
+
     - name: Build and install dpdk
       run: |
         cmake -S . -B build
         cmake --build build --target dpdk_configure
         cmake --build build --target dpdk_build --parallel
         sudo cmake --build build --target dpdk_install
-
-    - name: Run cargo check
-      run: cargo +${{ matrix.rust }} check --all-targets
-
-    - name: Run cargo fmt
-      run: cargo +${{ matrix.rust }} fmt --all -- --check
-    
-    - name: Run cargo clippy
-      run: cargo +${{ matrix.rust }} clippy --all-targets --all-features -- -D warnings
-    
-    - name: Run cargo test
-      run: cargo +${{ matrix.rust }} test --all -- --nocapture
 
     - name: Build DPDK deb package
       # sudo needed: meson install writes to /usr/local log dir even with DESTDIR staging
@@ -82,7 +72,7 @@ jobs:
         name: dpdk-deb
         path: build/dpdk-net_*.deb
         if-no-files-found: error
-
+    
     - name: Upload bench binaries artifact
       if: matrix.rust == '1.93.0'
       uses: actions/upload-artifact@v4
@@ -92,6 +82,18 @@ jobs:
           target/release/dpdk-bench-server
           target/release/dpdk-bench-client
         if-no-files-found: error
+
+    - name: Run cargo check
+      run: cargo +${{ matrix.rust }} check --all-targets
+
+    - name: Run cargo fmt
+      run: cargo +${{ matrix.rust }} fmt --all -- --check
+    
+    - name: Run cargo clippy
+      run: cargo +${{ matrix.rust }} clippy --all-targets --all-features -- -D warnings
+    
+    - name: Run cargo test
+      run: cargo +${{ matrix.rust }} test --all -- --nocapture
 
   e2e:
     # No 'needs: build' - runs in parallel, waits for artifacts via polling

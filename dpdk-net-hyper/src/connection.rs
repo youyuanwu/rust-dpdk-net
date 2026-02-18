@@ -1,4 +1,6 @@
+use std::future::Future;
 use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use http_body_util::BodyExt;
@@ -45,6 +47,23 @@ type BoxBody = Pin<Box<dyn hyper::body::Body<Data = Bytes, Error = BoxError>>>;
 enum ConnectionSender {
     Http1(http1::SendRequest<BoxBody>),
     Http2(http2::SendRequest<BoxBody>),
+}
+
+/// Future returned by [`Connection::send_request`].
+///
+/// This is an owned (`'static`) future — it does not borrow the
+/// `Connection`. The request is dispatched eagerly when `send_request`
+/// is called; this future only awaits the response.
+pub struct ResponseFuture {
+    inner: Pin<Box<dyn Future<Output = Result<Response<Incoming>, Error>>>>,
+}
+
+impl Future for ResponseFuture {
+    type Output = Result<Response<Incoming>, Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.inner.as_mut().poll(cx)
+    }
 }
 
 /// Convert any compatible body into our internal `BoxBody`.
@@ -108,23 +127,29 @@ impl Connection {
     }
 
     /// Send a request over this connection.
-    pub async fn send_request<B>(
-        &mut self,
-        request: Request<B>,
-    ) -> Result<Response<Incoming>, Error>
+    ///
+    /// The request is dispatched eagerly and the returned [`ResponseFuture`]
+    /// is an owned (`'static`) future that does not borrow the connection.
+    /// This means the connection can be reused for another request while the
+    /// response is still being awaited (HTTP/2 multiplexing).
+    pub fn send_request<B>(&mut self, request: Request<B>) -> ResponseFuture
     where
         B: hyper::body::Body<Data = Bytes> + 'static,
         B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     {
         let request = request.map(into_box_body);
-        match &mut self.sender {
-            ConnectionSender::Http1(sender) => {
-                sender.send_request(request).await.map_err(Error::Request)
-            }
-            ConnectionSender::Http2(sender) => {
-                sender.send_request(request).await.map_err(Error::Request)
-            }
-        }
+        let inner: Pin<Box<dyn Future<Output = Result<Response<Incoming>, Error>>>> =
+            match &mut self.sender {
+                ConnectionSender::Http1(sender) => {
+                    let fut = sender.send_request(request);
+                    Box::pin(async move { fut.await.map_err(Error::Request) })
+                }
+                ConnectionSender::Http2(sender) => {
+                    let fut = sender.send_request(request);
+                    Box::pin(async move { fut.await.map_err(Error::Request) })
+                }
+            };
+        ResponseFuture { inner }
     }
 
     /// Check if the connection is still usable for sending requests.

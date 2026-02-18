@@ -21,6 +21,16 @@ hyper-util.workspace = true
 socket2.workspace = true
 httparse.workspace = true
 kimojio.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+prost.workspace = true
+
+[build-dependencies]
+tonic-prost-build.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
+dpdk-net-hyper.workspace = true
+dpdk-net-axum.workspace = true
+dpdk-net-tonic.workspace = true
+http.workspace = true

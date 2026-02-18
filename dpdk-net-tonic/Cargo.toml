@@ -1,0 +1,26 @@
+[package]
+name = "dpdk-net-tonic"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+dpdk-net.workspace = true
+dpdk-net-hyper.workspace = true
+dpdk-net-axum.workspace = true
+smoltcp.workspace = true
+tonic.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+hyper.workspace = true
+http.workspace = true
+tower.workspace = true
+
+[dev-dependencies]
+dpdk-net-test.workspace = true
+serial_test.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "macros"] }
+prost.workspace = true
