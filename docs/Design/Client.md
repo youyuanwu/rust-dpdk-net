@@ -4,7 +4,7 @@ This document describes the HTTP client design for `dpdk-net`, addressing the `!
 
 ## Implementation Status
 
-✅ **Implemented** in `dpdk-net-hyper` crate:
+✅ **Implemented** in `dpdk-net-util` crate:
 - `DpdkHttpClient` — high-level client with `connect()` and `request()` methods
 - `Connection` — persistent HTTP connection with `send_request()`
 - `ConnectionPool` — simple per-host connection pool (`!Send`, one per lcore)
@@ -20,7 +20,7 @@ This document describes the HTTP client design for `dpdk-net`, addressing the `!
 ### Module Structure
 
 ```
-dpdk-net-hyper/
+dpdk-net-util/
 ├── Cargo.toml
 └── src/
     ├── lib.rs          # Re-exports
@@ -46,7 +46,7 @@ dpdk-net's `TcpStream` uses `Rc<RefCell<...>>` internally, making it `!Send`. Th
 
 Direct hyper handshake wrappers. Returns a `(SendRequest, connection_future)` pair. The connection future must be spawned via `spawn_local`.
 
-See: [connect.rs](../../dpdk-net-hyper/src/connect.rs)
+See: [connect.rs](../../dpdk-net-util/src/connect.rs)
 
 ### High-Level: `DpdkHttpClient`
 
@@ -63,13 +63,13 @@ let mut conn = client.connect("10.0.0.10", 8080).await?;
 let response = conn.send_request(Request::get("/health").body(Empty::new())?).await?;
 ```
 
-See: [client.rs](../../dpdk-net-hyper/src/client.rs), [connection.rs](../../dpdk-net-hyper/src/connection.rs)
+See: [client.rs](../../dpdk-net-util/src/client.rs), [connection.rs](../../dpdk-net-util/src/connection.rs)
 
 ### Connection Pool: `ConnectionPool`
 
 Simple per-host pool for workloads needing connection reuse. `!Send` — one pool per lcore.
 
-See: [pool.rs](../../dpdk-net-hyper/src/pool.rs)
+See: [pool.rs](../../dpdk-net-util/src/pool.rs)
 
 ---
 
@@ -94,7 +94,7 @@ See: [pool.rs](../../dpdk-net-hyper/src/pool.rs)
 
 ## References
 
-- [Implementation: dpdk-net-hyper](../../dpdk-net-hyper/src/lib.rs)
+- [Implementation: dpdk-net-util](../../dpdk-net-util/src/lib.rs)
 - [Test: axum_client_test.rs](../../dpdk-net-axum/tests/axum_client_test.rs)
 - [hyper client module](https://docs.rs/hyper/latest/hyper/client/index.html)
 - [Lower-level HTTP tests](../../dpdk-net-test/tests/http_auto_echo_test.rs)

@@ -8,7 +8,7 @@ The axum integration is built **on top of `DpdkApp`** (see [App.md](App.md)). `D
 
 ✅ **Implemented** in `dpdk-net-axum` crate:
 - `serve()` function — accepts `TcpListener`, `Router`, `CancellationToken`
-- Uses `AutoBuilder` from hyper-util with `LocalExecutor` from `dpdk-net-hyper`
+- Uses `AutoBuilder` from hyper-util with `LocalExecutor` from `dpdk-net-util`
 - Bridges axum's tower `Service` to hyper via `TowerToHyperService`
 - Auto-detects HTTP/1.1 and HTTP/2 (cleartext h2c)
 - Graceful shutdown via `CancellationToken`
@@ -25,7 +25,7 @@ The axum integration is built **on top of `DpdkApp`** (see [App.md](App.md)). `D
 
 ## Design
 
-**Key insight:** We bypass `axum::serve()` entirely because it requires `Send` streams. Instead we use hyper-util's `AutoBuilder` with a `LocalExecutor` (from `dpdk-net-hyper`) that spawns tasks via `tokio::task::spawn_local`.
+**Key insight:** We bypass `axum::serve()` entirely because it requires `Send` streams. Instead we use hyper-util's `AutoBuilder` with a `LocalExecutor` (from `dpdk-net-util`) that spawns tasks via `tokio::task::spawn_local`.
 
 | Constraint | dpdk-net | Standard axum |
 |------------|----------|---------------|
@@ -86,12 +86,14 @@ DpdkApp::new()
 ## Module Structure
 
 ```
-dpdk-net-axum/
-├── Cargo.toml
+dpdk-net-util/
 ├── src/
-│   ├── lib.rs         # Re-exports: DpdkApp, WorkerContext, serve
 │   ├── app.rs         # DpdkApp builder and run logic
-│   ├── context.rs     # WorkerContext definition
+│   └── context.rs     # WorkerContext definition
+
+dpdk-net-axum/
+├── src/
+│   ├── lib.rs         # Re-exports DpdkApp, WorkerContext from dpdk-net-util; exports serve
 │   └── serve.rs       # serve()
 └── tests/
     ├── app_echo_test.rs       # Raw TCP echo test

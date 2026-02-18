@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "dpdk-net", "dpdk-net-axum", "dpdk-net-hyper", "dpdk-net-sys",
+  "dpdk-net", "dpdk-net-axum", "dpdk-net-util", "dpdk-net-sys",
   "dpdk-net-test", "dpdk-net-tonic",
   "tests/dpdk-bench-client",
   "tests/dpdk-bench-server",
@@ -46,7 +46,7 @@ tower = { version = "0.5", default-features = false }
 
 # crate in this workspace
 dpdk-net = { path = "dpdk-net", version = "0.1.0" }
-dpdk-net-hyper = { path = "dpdk-net-hyper", version = "0.1.0" }
+dpdk-net-util = { path = "dpdk-net-util", version = "0.1.0" }
 dpdk-net-axum = { path = "dpdk-net-axum", version = "0.1.0" }
 dpdk-net-tonic = { path = "dpdk-net-tonic", version = "0.1.0" }
 dpdk-net-sys = { path = "dpdk-net-sys", version = "0.1.0" }

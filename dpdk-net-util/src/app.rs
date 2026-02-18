@@ -43,7 +43,7 @@ const DEFAULT_MTU: usize = 1500;
 ///
 /// ```ignore
 /// use dpdk_net::api::rte::eal::EalBuilder;
-/// use dpdk_net_axum::DpdkApp;
+/// use dpdk_net_util::DpdkApp;
 /// use dpdk_net::socket::TcpListener;
 /// use smoltcp::wire::Ipv4Address;
 /// use tokio_util::sync::CancellationToken;

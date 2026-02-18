@@ -9,13 +9,13 @@
 //! # Quick start
 //!
 //! ```ignore
-//! use dpdk_net_hyper::{DpdkHttpClient, Connection};
+//! use dpdk_net_util::{DpdkHttpClient, Connection};
 //! use dpdk_net::runtime::ReactorHandle;
 //! use smoltcp::wire::IpAddress;
 //!
 //! async fn run(reactor: &ReactorHandle) {
 //!     // Option A: helper function
-//!     let mut conn = dpdk_net_hyper::http1_connect(
+//!     let mut conn = dpdk_net_util::http1_connect(
 //!         reactor,
 //!         IpAddress::v4(10, 0, 0, 1), 8080, 1234,
 //!         16384, 16384,
@@ -30,16 +30,20 @@
 //! }
 //! ```
 
+pub mod app;
 pub mod client;
 pub mod connect;
 pub mod connection;
+pub mod context;
 pub mod error;
 pub mod executor;
 pub mod pool;
 
+pub use app::DpdkApp;
 pub use client::{ClientConfig, DpdkHttpClient};
 pub use connect::{http1_connect, http2_connect};
 pub use connection::{Connection, HttpVersion, ResponseFuture};
+pub use context::WorkerContext;
 pub use error::Error;
 pub use executor::LocalExecutor;
 pub use pool::ConnectionPool;

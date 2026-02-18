@@ -1,5 +1,5 @@
 [package]
-name = "dpdk-net-hyper"
+name = "dpdk-net-util"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
@@ -15,6 +15,7 @@ hyper = { workspace = true, features = ["client", "http1", "http2"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 http-body-util.workspace = true
 tokio = { workspace = true, features = ["rt"] }
+tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

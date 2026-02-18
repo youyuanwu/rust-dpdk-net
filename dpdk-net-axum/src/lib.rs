@@ -69,10 +69,7 @@
 //! }
 //! ```
 
-mod app;
-mod context;
 mod serve;
 
-pub use app::DpdkApp;
-pub use context::WorkerContext;
+pub use dpdk_net_util::{DpdkApp, WorkerContext};
 pub use serve::serve;

@@ -1,7 +1,7 @@
 //! Axum + HTTP Client Integration Test
 //!
 //! Validates the full stack: DpdkApp starts an axum server with `serve()`,
-//! then an HTTP client (dpdk-net-hyper) sends a GET request and verifies
+//! then an HTTP client (dpdk-net-util) sends a GET request and verifies
 //! the response. Both server and client run on the same lcore.
 
 use axum::Router;
@@ -10,7 +10,7 @@ use axum::routing::get;
 use dpdk_net::api::rte::eal::EalBuilder;
 use dpdk_net::socket::TcpListener;
 use dpdk_net_axum::{DpdkApp, WorkerContext, serve};
-use dpdk_net_hyper::DpdkHttpClient;
+use dpdk_net_util::DpdkHttpClient;
 
 use http_body_util::BodyExt;
 use hyper::Request;

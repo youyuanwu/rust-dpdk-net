@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// Error type for dpdk-net-hyper operations.
+/// Error type for dpdk-net-util operations.
 #[derive(Debug)]
 pub enum Error {
     /// TCP connection failed.

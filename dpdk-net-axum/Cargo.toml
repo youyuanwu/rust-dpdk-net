@@ -9,7 +9,7 @@ license.workspace = true
 
 [dependencies]
 dpdk-net.workspace = true
-dpdk-net-hyper.workspace = true
+dpdk-net-util.workspace = true
 smoltcp.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 tokio-util.workspace = true
@@ -18,7 +18,7 @@ axum.workspace = true
 hyper-util.workspace = true
 
 [dev-dependencies]
-dpdk-net-hyper.workspace = true
+dpdk-net-util.workspace = true
 dpdk-net-test.workspace = true
 http-body-util.workspace = true
 hyper.workspace = true

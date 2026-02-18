@@ -15,7 +15,7 @@
 use axum::Router;
 use dpdk_net::runtime::tokio_compat::TokioTcpStream;
 use dpdk_net::socket::TcpListener;
-use dpdk_net_hyper::LocalExecutor;
+use dpdk_net_util::LocalExecutor;
 use hyper_util::rt::TokioIo;
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use hyper_util::service::TowerToHyperService;

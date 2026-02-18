@@ -23,7 +23,7 @@ use crate::error::Error;
 /// # Examples
 ///
 /// ```ignore
-/// use dpdk_net_hyper::ConnectionPool;
+/// use dpdk_net_util::ConnectionPool;
 /// use dpdk_net::runtime::ReactorHandle;
 ///
 /// async fn run(reactor: &ReactorHandle) {

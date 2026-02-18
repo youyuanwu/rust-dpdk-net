@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 /// # Example
 ///
 /// ```ignore
-/// use dpdk_net_axum::WorkerContext;
+/// use dpdk_net_util::WorkerContext;
 /// use dpdk_net::socket::TcpListener;
 ///
 /// async fn my_server(ctx: WorkerContext) {

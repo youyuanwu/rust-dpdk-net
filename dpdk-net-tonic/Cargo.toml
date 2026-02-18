@@ -9,7 +9,7 @@ license.workspace = true
 
 [dependencies]
 dpdk-net.workspace = true
-dpdk-net-hyper.workspace = true
+dpdk-net-util.workspace = true
 dpdk-net-axum.workspace = true
 smoltcp.workspace = true
 tonic.workspace = true

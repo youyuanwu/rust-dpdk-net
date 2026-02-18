@@ -45,7 +45,7 @@ impl Default for ClientConfig {
 /// # Examples
 ///
 /// ```ignore
-/// use dpdk_net_hyper::{DpdkHttpClient, ClientConfig};
+/// use dpdk_net_util::{DpdkHttpClient, ClientConfig};
 /// use dpdk_net::runtime::ReactorHandle;
 /// use smoltcp::wire::IpAddress;
 ///
