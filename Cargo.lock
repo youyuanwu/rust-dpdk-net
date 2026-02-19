@@ -425,12 +425,15 @@ name = "dpdk-bench-server"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "ctrlc",
  "dpdk-net",
  "dpdk-net-test",
+ "dpdk-net-util",
  "http-body-util",
  "hyper",
  "smoltcp",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]

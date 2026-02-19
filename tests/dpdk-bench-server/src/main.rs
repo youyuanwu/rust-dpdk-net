@@ -180,60 +180,80 @@ fn run_dpdk_server(
     hw_queues: Option<usize>,
 ) {
     use dpdk_net::api::rte::eal::EalBuilder;
-    use dpdk_net_test::app::dpdk_server_runner::DpdkServerRunner;
+    use dpdk_net::socket::TcpListener;
     use dpdk_net_test::app::http_server::Http1Server;
-    use dpdk_net_test::manual::tcp::get_pci_addr;
-    // use dpdk_net_test::util::ensure_hugepages;
+    use dpdk_net_test::manual::tcp::{get_default_gateway, get_interface_ipv4, get_pci_addr};
+    use dpdk_net_util::{DpdkApp, WorkerContext};
     use smoltcp::wire::Ipv4Address;
+    use tokio_util::sync::CancellationToken;
+    use tracing::warn;
 
-    // Setup hugepages (user's responsibility before using the runner)
-    // TODO: remove. Ansible does this.
-    // ensure_hugepages().expect("Failed to ensure hugepages");
+    // Detect network config: use explicit IP/gateway if provided, otherwise auto-detect
+    let ip = if let Some(ip_str) = ip_addr {
+        Ipv4Address::from_str(ip_str).expect("Invalid IP address")
+    } else {
+        get_interface_ipv4(interface).expect("Failed to get IP address for interface")
+    };
+    let gw = if let Some(gw_str) = gateway {
+        Ipv4Address::from_str(gw_str).expect("Invalid gateway")
+    } else {
+        get_default_gateway().unwrap_or(Ipv4Address::new(10, 0, 0, 1))
+    };
 
-    // Initialize DPDK EAL (user's responsibility before using the runner)
+    // Detect hardware queues: use explicit value if provided, otherwise auto-detect
+    let num_queues = if let Some(queues) = hw_queues {
+        queues
+    } else {
+        dpdk_net_test::util::get_ethtool_channels(interface)
+            .map(|ch| ch.combined_count as usize)
+            .expect("Failed to get hardware queues via ethtool")
+    };
+
+    // Apply max_queues cap
+    let num_queues = if let Some(max) = max_queues {
+        num_queues.min(max)
+    } else {
+        num_queues
+    };
+    let core_list = format!("0-{}", num_queues.saturating_sub(1));
+
+    // Initialize DPDK EAL with core list matching queue count
     let pci_addr = get_pci_addr(interface).expect("Failed to get PCI address");
     let _eal = EalBuilder::new()
         .allow(&pci_addr)
+        .core_list(&core_list)
         .init()
         .expect("Failed to initialize EAL");
 
-    let mut runner = DpdkServerRunner::new(interface);
+    // Setup Ctrl+C handler
+    let cancel = CancellationToken::new();
+    let cancel_clone = cancel.clone();
+    ctrlc::set_handler(move || {
+        warn!("Received Ctrl+C, shutting down");
+        cancel_clone.cancel();
+    })
+    .expect("Failed to set Ctrl+C handler");
 
-    // Configure network: use explicit IP/gateway if provided, otherwise auto-detect
-    if let Some(ip_str) = ip_addr {
-        let ip = Ipv4Address::from_str(ip_str).expect("Invalid IP address");
-        let gw = gateway
-            .map(|g| Ipv4Address::from_str(g).expect("Invalid gateway"))
-            .unwrap_or(Ipv4Address::new(10, 0, 0, 1));
-        runner = runner.ip_addr(ip).gateway(gw);
-    } else {
-        runner = runner.with_default_network_config();
-    }
-
-    // Configure hardware queues: use explicit value if provided, otherwise auto-detect
-    if let Some(queues) = hw_queues {
-        runner = runner.hw_queues(queues);
-    } else {
-        runner = runner.with_default_hw_queues();
-    }
-
-    runner = runner.port(port);
-    if let Some(max_queues) = max_queues {
-        runner = runner.max_queues(max_queues);
-    }
-    runner
-        .backlog(backlog)
-        .tcp_buffers(16384, 16384)
-        .run(|ctx| async move {
-            Http1Server::new(
-                ctx.listener,
-                ctx.cancel,
-                counter_handler,
-                ctx.queue_id,
-                ctx.port,
-            )
-            .run()
-            .await
+    DpdkApp::new()
+        .eth_dev(0)
+        .ip(ip)
+        .gateway(gw)
+        .run(move |ctx: WorkerContext| {
+            let cancel = cancel.clone();
+            async move {
+                let listener =
+                    TcpListener::bind_with_backlog(&ctx.reactor, port, 16384, 16384, backlog)
+                        .expect("Failed to bind listener");
+                Http1Server::new(
+                    listener,
+                    cancel,
+                    counter_handler,
+                    ctx.queue_id as usize,
+                    port,
+                )
+                .run()
+                .await
+            }
         });
 }
 

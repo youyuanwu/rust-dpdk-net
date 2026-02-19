@@ -4,7 +4,6 @@
 //! across tests and examples.
 
 pub mod custom_http;
-pub mod dpdk_server_runner;
 pub mod echo_server;
 pub mod http_server;
 pub mod kimojio_server;

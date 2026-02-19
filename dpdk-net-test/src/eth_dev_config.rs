@@ -2,7 +2,7 @@
 //!
 //! This module provides `EthDevConfig`, a reusable configuration struct
 //! for creating DPDK memory pools and ethernet devices. It's used by both
-//! `create_test_context()` (for testing) and `DpdkServerRunner` (for production).
+//! `create_test_context()` (for testing) and `DpdkApp` (for production).
 
 use std::sync::Arc;
 

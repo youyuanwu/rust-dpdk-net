@@ -92,7 +92,7 @@ pub struct CrossQueueForwarder {
 **Improvements:**
 - Test IPv6 with RSS distribution
 - Verify NDP (Neighbor Discovery Protocol) works with `SharedArpCache` equivalent
-- Add IPv6 address configuration to `DpdkServerRunner`
+- Add IPv6 address configuration to `DpdkApp`
 
 ---
 
@@ -170,7 +170,7 @@ pipeline
 | Feature | SPDK | DPDK | dpdk-net |
 |---------|------|------|----------|
 | Config format | JSON | CLI args | Programmatic |
-| Auto-create threads | Yes | Partial (`-l`) | Yes (DpdkServerRunner) |
+| Auto-create threads | Yes | Partial (`-l`) | Yes (DpdkApp) |
 | Auto-probe devices | Yes | No | Partial |
 | Device-to-queue mapping | Config-driven | Manual | Automatic |
 
@@ -254,7 +254,7 @@ async fn test_tcp_echo() {
 
 ### 4.0.1 SPDK-style Application Framework
 
-**Current State:** `DpdkServerRunner` provides automatic multi-queue setup, but requires programmatic configuration.
+**Current State:** `DpdkApp` provides automatic multi-queue setup, but requires programmatic configuration.
 
 **Gap:** SPDK provides a declarative application framework where:
 - Threads are auto-created from config

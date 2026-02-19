@@ -149,7 +149,6 @@ Testing infrastructure and example servers.
 | File | Purpose |
 |------|---------|
 | [dpdk_test.rs](../dpdk-net-test/src/dpdk_test.rs) | `DpdkTestContext` / `create_test_context()` - Test harness for virtual devices |
-| [app/dpdk_server_runner.rs](../dpdk-net-test/src/app/dpdk_server_runner.rs) | `DpdkServerRunner` - Multi-queue production server runner |
 | [app/echo_server.rs](../dpdk-net-test/src/app/echo_server.rs) | TCP echo server implementation |
 | [app/http_server.rs](../dpdk-net-test/src/app/http_server.rs) | HTTP/1.1 and HTTP/2 servers using hyper |
 | [app/tokio_server.rs](../dpdk-net-test/src/app/tokio_server.rs) | Standard tokio HTTP servers for benchmarking comparison |
@@ -385,11 +384,8 @@ let eth_conf = EthConf::new()
 Each worker thread is pinned to a specific CPU core for optimal performance:
 
 ```rust
-// In DpdkServerRunner::spawn_workers()
-let _dpdk_registration = ThreadRegistration::new()?;
-
-// Pin this thread to CPU `queue_id` for optimal cache locality
-set_cpu_affinity(queue_id)?;
+// DpdkApp uses EAL lcores which are automatically pinned to CPUs
+// Each lcore thread has CPU affinity set by DPDK's EAL initialization
 ```
 
 **Why CPU affinity matters:**
@@ -401,7 +397,7 @@ set_cpu_affinity(queue_id)?;
 | Cross-NUMA memory access possible | NUMA-local access |
 | ~10-30% performance loss | Optimal performance |
 
-This mimics DPDK's EAL lcore behavior, where each lcore thread is pinned via `pthread_setaffinity_np()`.
+`DpdkApp` uses native EAL lcores, where each lcore thread is pinned via `pthread_setaffinity_np()`.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -525,29 +521,6 @@ let (ctx, device) = create_test_context()?;
 
 Creates a `net_ring0` virtual loopback device with default settings.
 For async tests, use `DpdkApp` from `dpdk-net-util` instead.
-
-### DpdkServerRunner
-
-Production-ready multi-queue server runner:
-
-```rust
-DpdkServerRunner::new("eth1")
-    .port(8080)
-    .max_queues(8)
-    .run(|ctx| async {
-        // ctx.listener - TcpListener bound to port
-        // ctx.queue_id - Which queue this is
-        MyServer::new(ctx.listener).run().await
-    });
-```
-
-Handles:
-- Hugepages setup
-- EAL initialization
-- RSS RETA configuration
-- Per-queue worker threads
-- Shared ARP cache setup
-- Graceful shutdown
 
 ### Test Files
 

@@ -21,4 +21,7 @@ http-body-util.workspace = true
 # Reference the test crate for server implementations
 dpdk-net-test.workspace = true
 dpdk-net.workspace = true
+dpdk-net-util.workspace = true
 smoltcp.workspace = true
+tokio-util.workspace = true
+ctrlc.workspace = true
