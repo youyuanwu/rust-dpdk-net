@@ -16,7 +16,7 @@ let greeter = GreeterServer::new(MyGreeter::default());
 let routes = tonic::service::Routes::new(greeter);
 
 let listener = TcpListener::bind(&ctx.reactor, 50051, 4096, 4096).unwrap();
-serve(listener, routes, ctx.shutdown).await;
+serve(listener, routes, shutdown).await;
 ```
 
 Mixed REST + gRPC: call `.into_axum_router()` yourself, merge with axum routes, and use `dpdk_net_axum::serve()` directly.

@@ -12,7 +12,6 @@ dpdk-net.workspace = true
 dpdk-net-util.workspace = true
 smoltcp.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
-tokio-util.workspace = true
 tracing.workspace = true
 axum.workspace = true
 hyper-util.workspace = true

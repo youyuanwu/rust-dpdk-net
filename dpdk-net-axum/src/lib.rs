@@ -36,36 +36,23 @@
 //! use dpdk_net_axum::{DpdkApp, WorkerContext};
 //! use dpdk_net::socket::TcpListener;
 //! use smoltcp::wire::Ipv4Address;
-//! use tokio_util::sync::CancellationToken;
 //!
 //! fn main() {
-//!     // Initialize EAL with desired lcores
 //!     let _eal = EalBuilder::new()
 //!         .core_list("0-3")
 //!         .allow("0000:00:04.0")
 //!         .init()
 //!         .expect("EAL init failed");
 //!     
-//!     // Create a shutdown signal
-//!     let shutdown_token = CancellationToken::new();
-//!     let shutdown_clone = shutdown_token.clone();
-//!     ctrlc::set_handler(move || shutdown_clone.cancel()).unwrap();
-//!     
 //!     // Run app - uses all 4 lcores, 4 queues
 //!     DpdkApp::new()
 //!         .eth_dev(0)
 //!         .ip(Ipv4Address::new(10, 0, 0, 10))
 //!         .gateway(Ipv4Address::new(10, 0, 0, 1))
-//!         .run(
-//!             // Any future that completes on shutdown
-//!             shutdown_token.cancelled(),
-//!             // Server closure - runs on each lcore
-//!             |ctx: WorkerContext| async move {
-//!                 let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
-//!                 // Wait for shutdown (propagated via CancellationToken)
-//!                 ctx.shutdown.cancelled().await;
-//!             },
-//!         );
+//!         .run(|ctx: WorkerContext| async move {
+//!             let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
+//!             // ... serve until done, then return
+//!         });
 //! }
 //! ```
 

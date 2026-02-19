@@ -7,11 +7,10 @@ The axum integration is built **on top of `DpdkApp`** (see [App.md](App.md)). `D
 ## Implementation Status
 
 ✅ **Implemented** in `dpdk-net-axum` crate:
-- `serve()` function — accepts `TcpListener`, `Router`, `CancellationToken`
+- `serve()` function — accepts `TcpListener`, `Router`
 - Uses `AutoBuilder` from hyper-util with `LocalExecutor` from `dpdk-net-util`
 - Bridges axum's tower `Service` to hyper via `TowerToHyperService`
 - Auto-detects HTTP/1.1 and HTTP/2 (cleartext h2c)
-- Graceful shutdown via `CancellationToken`
 - Re-exported from `dpdk_net_axum::serve`
 
 🔲 **Not yet implemented:**
@@ -36,7 +35,7 @@ The axum integration is built **on top of `DpdkApp`** (see [App.md](App.md)). `D
 
 ### How It Works
 
-1. `serve()` runs an accept loop with `tokio::select!` on shutdown + `listener.accept()`
+1. `serve()` runs an accept loop on `listener.accept()`
 2. Each accepted stream is wrapped: `TokioIo::new(TokioTcpStream::new(stream))`
 3. `Router` is cloned per connection and wrapped with `TowerToHyperService` to bridge tower's `Service` to hyper's `Service`
 4. `AutoBuilder::new(LocalExecutor).serve_connection(io, service)` handles HTTP/1.1 or HTTP/2
@@ -51,8 +50,8 @@ See: [serve.rs](../../dpdk-net-axum/src/serve.rs)
 
 ```rust
 /// Serve an axum Router on a dpdk-net TcpListener.
-/// Runs until the `shutdown` token is cancelled.
-pub async fn serve(listener: TcpListener, app: Router, shutdown: CancellationToken);
+/// Runs until the `shutdown` future completes.
+pub async fn serve(listener: TcpListener, app: Router, shutdown: impl Future<Output = ()>);
 ```
 
 ### Usage
@@ -62,11 +61,11 @@ DpdkApp::new()
     .eth_dev(0)
     .ip(Ipv4Address::new(10, 0, 0, 10))
     .gateway(Ipv4Address::new(10, 0, 0, 1))
-    .run(shutdown, move |ctx: WorkerContext| {
+    .run(move |ctx: WorkerContext| {
         let app = app.clone();
         async move {
             let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
-            serve(listener, app, ctx.shutdown).await;
+            serve(listener, app, std::future::pending::<()>()).await;
         }
     });
 ```
@@ -113,7 +112,7 @@ No `tower` dependency needed — `hyper_util::service::TowerToHyperService` hand
 | State extraction | ✅ | ✅ |
 | HTTP/1.1 | ✅ | ✅ |
 | HTTP/2 (h2c) | ✅ | ✅ |
-| Graceful shutdown | ✅ | ✅ (via `CancellationToken`) |
+| Graceful shutdown | ✅ | ✅ (worker closure returns) |
 | Multi-threaded | ✅ | ❌ (single-threaded per lcore) |
 | `Send` streams | Required | Not required |
 | Cross-thread task spawn | ✅ | ❌ |

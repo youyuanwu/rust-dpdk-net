@@ -497,7 +497,6 @@ DpdkServerRunner::new("eth1")
     .max_queues(8)
     .run(|ctx| async {
         // ctx.listener - TcpListener bound to port
-        // ctx.cancel - CancellationToken for shutdown
         // ctx.queue_id - Which queue this is
         MyServer::new(ctx.listener).run().await
     });

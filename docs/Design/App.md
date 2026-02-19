@@ -32,13 +32,10 @@ DpdkApp::new()
     .eth_dev(0)
     .ip(Ipv4Address::new(10, 0, 0, 10))
     .gateway(Ipv4Address::new(10, 0, 0, 1))
-    .run(
-        shutdown_token.cancelled(),
-        |ctx: WorkerContext| async move {
-            let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
-            serve(listener, app, ctx.shutdown).await;
-        },
-    );
+    .run(|ctx: WorkerContext| async move {
+        let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
+        serve(listener, app, std::future::pending::<()>()).await;
+    });
 ```
 
 ### WorkerContext
@@ -48,12 +45,11 @@ DpdkApp::new()
 | `lcore` | `Lcore` | The lcore this worker runs on |
 | `queue_id` | `u16` | Queue ID (0 = main lcore, 1+ = workers) |
 | `socket_id` | `u32` | NUMA socket ID |
-| `shutdown` | `CancellationToken` | Graceful shutdown signal |
 | `reactor` | `ReactorHandle` | Create `TcpListener` or `TcpStream` |
 
 ## Shutdown
 
-The `run()` method accepts a shutdown future (e.g., `CancellationToken::cancelled()`). When it completes, a `CancellationToken` is broadcast to all workers via `ctx.shutdown`. After all workers exit, the EthDev is stopped and closed.
+`run()` blocks until all worker closures return. After all workers exit, the EthDev is stopped and closed.
 
 ## Testing with Virtual Devices
 

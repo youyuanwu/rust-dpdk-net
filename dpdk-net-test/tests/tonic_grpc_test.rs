@@ -10,7 +10,6 @@ use dpdk_net_axum::{DpdkApp, WorkerContext};
 use dpdk_net_tonic::{DpdkGrpcChannel, serve};
 
 use smoltcp::wire::Ipv4Address;
-use tokio_util::sync::CancellationToken;
 use tonic::{Request, Response, Status};
 
 use serial_test::serial;
@@ -63,13 +62,10 @@ async fn worker_main(ctx: WorkerContext) {
     println!("Server: listening on port {}", SERVER_PORT);
 
     // Spawn the gRPC server
-    let server_shutdown = ctx.shutdown.child_token();
-    let server_task = tokio::task::spawn_local({
-        let shutdown = server_shutdown.clone();
-        async move {
-            serve(listener, routes, shutdown).await;
-        }
-    });
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let server_task = tokio::task::spawn_local(serve(listener, routes, async {
+        let _ = shutdown_rx.await;
+    }));
 
     // Give server a moment to start accepting
     tokio::task::yield_now().await;
@@ -98,10 +94,9 @@ async fn worker_main(ctx: WorkerContext) {
 
     println!("\n✓ Tonic gRPC test PASSED!");
 
-    // Shut down server and app
-    server_shutdown.cancel();
+    // Shut down server
+    let _ = shutdown_tx.send(());
     let _ = server_task.await;
-    ctx.shutdown.cancel();
 }
 
 #[test]
@@ -120,16 +115,13 @@ fn test_tonic_grpc() {
 
     println!("EAL initialized");
 
-    let shutdown_token = CancellationToken::new();
-    let shutdown_clone = shutdown_token.clone();
-
     DpdkApp::new()
         .eth_dev(0)
         .ip(SERVER_IP)
         .gateway(GATEWAY_IP)
         .mbufs_per_queue(1024)
         .descriptors(128, 128)
-        .run(shutdown_clone.cancelled_owned(), worker_main);
+        .run(worker_main);
 
     println!("\n=== Tonic gRPC Test Complete ===\n");
 }

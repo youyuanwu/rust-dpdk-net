@@ -13,7 +13,6 @@ dpdk-net-util.workspace = true
 dpdk-net-axum.workspace = true
 smoltcp.workspace = true
 tonic.workspace = true
-tokio-util.workspace = true
 tracing.workspace = true
 hyper.workspace = true
 http.workspace = true

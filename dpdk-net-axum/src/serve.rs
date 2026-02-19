@@ -19,8 +19,9 @@ use dpdk_net_util::LocalExecutor;
 use hyper_util::rt::TokioIo;
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use hyper_util::service::TowerToHyperService;
-use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
+
+use std::future::Future;
 
 /// Serve an axum [`Router`] on a dpdk-net [`TcpListener`].
 ///
@@ -28,7 +29,7 @@ use tracing::{debug, error, info};
 /// (HTTP/1.1 or HTTP/2 cleartext). Uses [`LocalExecutor`] to handle
 /// `!Send` futures from dpdk-net's socket types.
 ///
-/// Runs until the `shutdown` token is cancelled.
+/// Runs until the `shutdown` future completes.
 ///
 /// # Example
 ///
@@ -44,21 +45,23 @@ use tracing::{debug, error, info};
 ///     .eth_dev(0)
 ///     .ip(Ipv4Address::new(10, 0, 0, 10))
 ///     .gateway(Ipv4Address::new(10, 0, 0, 1))
-///     .run(shutdown, move |ctx: WorkerContext| {
+///     .run(move |ctx: WorkerContext| {
 ///         let app = app.clone();
 ///         async move {
 ///             let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
-///             serve(listener, app, ctx.shutdown).await;
+///             serve(listener, app, std::future::pending::<()>()).await;
 ///         }
 ///     });
 /// ```
-pub async fn serve(mut listener: TcpListener, app: Router, shutdown: CancellationToken) {
+pub async fn serve(mut listener: TcpListener, app: Router, shutdown: impl Future<Output = ()>) {
     info!("Axum server starting");
     let mut conn_id = 0u64;
 
+    tokio::pin!(shutdown);
+
     loop {
         tokio::select! {
-            _ = shutdown.cancelled() => break,
+            _ = &mut shutdown => break,
             result = listener.accept() => {
                 match result {
                     Ok(stream) => {

@@ -10,7 +10,6 @@ use dpdk_net::socket::{TcpListener, TcpStream};
 use dpdk_net_axum::{DpdkApp, WorkerContext};
 
 use smoltcp::wire::{IpAddress, Ipv4Address};
-use tokio_util::sync::CancellationToken;
 
 use serial_test::serial;
 
@@ -165,9 +164,6 @@ async fn server_main(ctx: WorkerContext) {
         Ok(()) => println!("\n✓ Echo test PASSED!"),
         Err(e) => panic!("Echo test FAILED: {}", e),
     }
-
-    // Signal shutdown complete
-    ctx.shutdown.cancel();
 }
 
 #[test]
@@ -188,10 +184,6 @@ fn test_dpdk_app_echo() {
 
     println!("EAL initialized");
 
-    // Create app shutdown token - will be cancelled when test is done
-    let shutdown_token = CancellationToken::new();
-    let shutdown_token_clone = shutdown_token.clone();
-
     // Run the DpdkApp
     DpdkApp::new()
         .eth_dev(0)
@@ -199,12 +191,7 @@ fn test_dpdk_app_echo() {
         .gateway(GATEWAY_IP)
         .mbufs_per_queue(1024) // Small for testing without hugepages
         .descriptors(128, 128)
-        .run(
-            // Shutdown future - waits for test to complete
-            shutdown_token_clone.cancelled_owned(),
-            // Server closure - runs on main lcore
-            server_main,
-        );
+        .run(server_main);
 
     println!("\n=== DpdkApp Echo Test Complete ===\n");
 }

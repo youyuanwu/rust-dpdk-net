@@ -15,12 +15,10 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 
 use std::future::Future;
 use std::net::Ipv4Addr;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::runtime::Builder;
-use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 /// Default headroom reserved at the front of each mbuf
@@ -46,7 +44,6 @@ const DEFAULT_MTU: usize = 1500;
 /// use dpdk_net_util::DpdkApp;
 /// use dpdk_net::socket::TcpListener;
 /// use smoltcp::wire::Ipv4Address;
-/// use tokio_util::sync::CancellationToken;
 ///
 /// fn main() {
 ///     let _eal = EalBuilder::new()
@@ -55,25 +52,14 @@ const DEFAULT_MTU: usize = 1500;
 ///         .init()
 ///         .expect("EAL init failed");
 ///     
-///     // Create a shutdown signal
-///     let shutdown_token = CancellationToken::new();
-///     let shutdown_clone = shutdown_token.clone();
-///     
-///     // Setup Ctrl+C handler
-///     ctrlc::set_handler(move || shutdown_clone.cancel()).unwrap();
-///     
 ///     DpdkApp::new()
 ///         .eth_dev(0)
 ///         .ip(Ipv4Address::new(10, 0, 0, 10))
 ///         .gateway(Ipv4Address::new(10, 0, 0, 1))
-///         .run(
-///             shutdown_token.cancelled(),
-///             |ctx| async move {
-///                 let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
-///                 // Wait for shutdown
-///                 ctx.shutdown.cancelled().await;
-///             },
-///         );
+///         .run(|ctx| async move {
+///             let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
+///             // ... serve until done, then return
+///         });
 /// }
 /// ```
 pub struct DpdkApp {
@@ -138,18 +124,12 @@ impl DpdkApp {
     /// Run the application.
     ///
     /// Launches work on all worker lcores and runs queue 0 on the main lcore.
-    /// Blocks until the shutdown future completes.
+    /// Blocks until all worker closures return.
     ///
     /// # Arguments
     ///
-    /// * `shutdown` - Future that completes when shutdown is requested
-    /// * `server` - Closure that creates the async server/client for each lcore
-    ///
-    /// # Type Parameters
-    ///
-    /// * `S` - Shutdown future type
-    /// * `F` - Closure type that creates the async server/client
-    /// * `Fut` - Future type returned by the closure
+    /// * `server` - Closure that creates the async server/client for each lcore.
+    ///   The closure receives a [`WorkerContext`] and should return when done.
     ///
     /// # Panics
     ///
@@ -158,9 +138,8 @@ impl DpdkApp {
     /// - Gateway is not set
     /// - No lcores are available
     /// - Ethernet device configuration fails
-    pub fn run<S, F, Fut>(self, shutdown: S, server: F)
+    pub fn run<F, Fut>(self, server: F)
     where
-        S: Future<Output = ()> + Send + 'static,
         F: Fn(WorkerContext) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + 'static,
     {
@@ -237,9 +216,6 @@ impl DpdkApp {
             "Ethernet device configured"
         );
 
-        // Setup shutdown handling - create cancellation token to broadcast to all workers
-        let shutdown_token = CancellationToken::new();
-
         // Create shared ARP cache for multi-queue setups
         let shared_arp_cache = if num_queues > 1 {
             info!("Multi-queue mode: using shared ARP cache");
@@ -262,7 +238,6 @@ impl DpdkApp {
             }
 
             let mempool = mempool.clone();
-            let shutdown_token = shutdown_token.clone();
             let shared_arp_cache = shared_arp_cache.clone();
             let server = server.clone();
             let queue_id = queue_id as u16;
@@ -277,25 +252,15 @@ impl DpdkApp {
                         mac_addr,
                         ip_addr,
                         gateway,
-                        shutdown_token,
                         shared_arp_cache,
                         server,
-                        None, // Workers don't watch shutdown future
                     );
                     0
                 })
                 .expect("Failed to launch on worker lcore");
         }
 
-        // Prepare shutdown watcher for main worker
-        let shutdown_token_for_cancel = shutdown_token.clone();
-        let shutdown_watcher: Pin<Box<dyn Future<Output = ()> + Send>> = Box::pin(async move {
-            shutdown.await;
-            info!("Shutdown signal received, cancelling all workers");
-            shutdown_token_for_cancel.cancel();
-        });
-
-        // Run main queue on main lcore (with shutdown watcher)
+        // Run main queue on main lcore
         Self::run_worker(
             main_queue_id,
             self.port_id,
@@ -303,10 +268,8 @@ impl DpdkApp {
             mac_addr,
             ip_addr,
             gateway,
-            shutdown_token,
             shared_arp_cache,
             server,
-            Some(shutdown_watcher),
         );
 
         // Wait for all workers to finish
@@ -323,10 +286,6 @@ impl DpdkApp {
     }
 
     /// Run a single worker on the current lcore.
-    ///
-    /// When `shutdown_watcher` is `Some`, this worker will spawn a task to watch
-    /// the shutdown future and cancel the token when it completes (main worker).
-    /// When `None`, this is a regular worker that just waits on the token.
     #[allow(clippy::too_many_arguments)]
     fn run_worker<F, Fut>(
         queue_id: u16,
@@ -335,21 +294,17 @@ impl DpdkApp {
         mac_addr: EthernetAddress,
         ip_addr: Ipv4Address,
         gateway: Ipv4Address,
-        shutdown_token: CancellationToken,
         shared_arp_cache: Option<SharedArpCache>,
         server: Arc<F>,
-        shutdown_watcher: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
     ) where
         F: Fn(WorkerContext) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + 'static,
     {
-        let is_main = shutdown_watcher.is_some();
         let lcore = Lcore::current().expect("Not running on an lcore");
         debug!(
             queue_id,
             lcore_id = lcore.id(),
             socket_id = lcore.socket_id(),
-            is_main,
             "Worker starting"
         );
 
@@ -402,17 +357,11 @@ impl DpdkApp {
                 reactor.run(reactor_cancel_clone).await;
             });
 
-            // If main worker, spawn shutdown watcher
-            if let Some(watcher) = shutdown_watcher {
-                tokio::task::spawn(watcher);
-            }
-
             // Create worker context
             let ctx = WorkerContext {
                 lcore,
                 queue_id,
                 socket_id: lcore.socket_id(),
-                shutdown: shutdown_token,
                 reactor: handle,
             };
 
@@ -424,6 +373,6 @@ impl DpdkApp {
             let _ = reactor_task.await;
         });
 
-        debug!(queue_id, is_main, "Worker finished");
+        debug!(queue_id, "Worker finished");
     }
 }

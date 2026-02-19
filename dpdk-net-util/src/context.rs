@@ -2,14 +2,12 @@
 
 use dpdk_net::api::rte::lcore::Lcore;
 use dpdk_net::runtime::ReactorHandle;
-use tokio_util::sync::CancellationToken;
 
 /// Context passed to each worker lcore.
 ///
 /// This provides everything needed to run a server or client on a specific lcore:
 /// - Access to the lcore information (ID, socket, etc.)
 /// - Reactor handle for creating TCP/UDP sockets
-/// - Shutdown token for graceful termination
 ///
 /// # Example
 ///
@@ -20,10 +18,7 @@ use tokio_util::sync::CancellationToken;
 /// async fn my_server(ctx: WorkerContext) {
 ///     // Create a server listener
 ///     let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
-///     
-///     // Wait for shutdown
-///     ctx.shutdown.cancelled().await;
-///     println!("Worker {} shutting down", ctx.queue_id);
+///     // ... serve requests
 /// }
 /// ```
 pub struct WorkerContext {
@@ -39,12 +34,6 @@ pub struct WorkerContext {
     ///
     /// Useful for NUMA-aware memory allocation.
     pub socket_id: u32,
-
-    /// Cancellation token for graceful shutdown.
-    ///
-    /// Use `shutdown.cancelled().await` to wait for shutdown.
-    /// Use `shutdown.is_cancelled()` for non-blocking check.
-    pub shutdown: CancellationToken,
 
     /// Reactor handle for creating sockets.
     ///
