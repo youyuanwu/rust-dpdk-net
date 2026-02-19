@@ -13,10 +13,11 @@ use smoltcp::iface::{Config, Interface};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 
+use std::cell::Cell;
 use std::future::Future;
 use std::net::Ipv4Addr;
+use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::runtime::Builder;
 use tracing::{debug, info, warn};
@@ -349,7 +350,7 @@ impl DpdkApp {
             let handle = reactor.handle();
 
             // Reactor cancel flag
-            let reactor_cancel = Arc::new(AtomicBool::new(false));
+            let reactor_cancel = Rc::new(Cell::new(false));
             let reactor_cancel_clone = reactor_cancel.clone();
 
             // Spawn reactor
@@ -369,7 +370,7 @@ impl DpdkApp {
             server(ctx).await;
 
             // Signal reactor to stop
-            reactor_cancel.store(true, Ordering::Relaxed);
+            reactor_cancel.set(true);
             let _ = reactor_task.await;
         });
 

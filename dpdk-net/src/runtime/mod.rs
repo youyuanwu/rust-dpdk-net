@@ -26,8 +26,8 @@
 //! use dpdk_net::runtime::{Reactor, TokioRuntime};
 //! use dpdk_net::socket::TcpListener;
 //! use smoltcp::iface::Interface;
-//! use std::sync::atomic::AtomicBool;
-//! use std::sync::Arc;
+//! use std::cell::Cell;
+//! use std::rc::Rc;
 //! use tokio::runtime::Builder;
 //!
 //! fn example(device: DpdkDevice, iface: Interface) {
@@ -36,7 +36,7 @@
 //!     rt.block_on(async {
 //!         let reactor = Reactor::new(device, iface);
 //!         let handle = reactor.handle();
-//!         let cancel = Arc::new(AtomicBool::new(false));
+//!         let cancel = Rc::new(Cell::new(false));
 //!
 //!         // Spawn the reactor polling task
 //!         tokio::task::spawn_local(async move {

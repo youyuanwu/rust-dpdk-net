@@ -15,7 +15,8 @@ use dpdk_net_test::eth_dev_config::EthDevConfig;
 use smoltcp::iface::{Config, Interface};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address};
-use std::sync::atomic::AtomicBool;
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use tokio::runtime::Builder;
 
@@ -92,7 +93,7 @@ fn test_udp_socket_bind() {
         let handle = reactor.handle();
 
         // Create cancel flag
-        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel = Rc::new(Cell::new(false));
         let cancel_clone = cancel.clone();
 
         // Spawn reactor
@@ -112,7 +113,7 @@ fn test_udp_socket_bind() {
 
         // Cleanup
         drop(socket);
-        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        cancel.set(true);
         reactor_task.await.unwrap();
     });
 }
@@ -149,7 +150,7 @@ fn test_udp_send_recv_loopback() {
         let handle = reactor.handle();
 
         // Create cancel flag
-        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel = Rc::new(Cell::new(false));
         let cancel_clone = cancel.clone();
 
         // Spawn reactor
@@ -187,7 +188,7 @@ fn test_udp_send_recv_loopback() {
         // Cleanup
         drop(client);
         drop(server);
-        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        cancel.set(true);
         reactor_task.await.unwrap();
     });
 }
@@ -214,7 +215,7 @@ fn test_udp_multiple_sockets() {
         let reactor = Reactor::new(device, iface);
         let handle = reactor.handle();
 
-        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel = Rc::new(Cell::new(false));
         let cancel_clone = cancel.clone();
 
         let reactor_task = tokio::task::spawn_local(async move {
@@ -240,7 +241,7 @@ fn test_udp_multiple_sockets() {
         drop(socket1);
         drop(socket2);
         drop(socket3);
-        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        cancel.set(true);
         reactor_task.await.unwrap();
     });
 }
