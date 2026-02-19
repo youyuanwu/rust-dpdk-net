@@ -7,12 +7,13 @@
 //! The server echoes the request body back in the response.
 
 use dpdk_net::BoxError;
+use dpdk_net::api::rte::eal::EalBuilder;
+use dpdk_net::runtime::ReactorHandle;
 use dpdk_net::runtime::tokio_compat::TokioTcpStream;
-use dpdk_net::runtime::{Reactor, ReactorHandle};
 use dpdk_net::socket::{TcpListener, TcpStream};
 
+use dpdk_net_axum::{DpdkApp, WorkerContext};
 use dpdk_net_test::app::http_server::{Http2Server, LocalExecutor, echo_service};
-use dpdk_net_test::dpdk_test::DpdkTestContextBuilder;
 
 use http_body_util::{BodyExt, Full};
 use hyper::Request;
@@ -20,11 +21,9 @@ use hyper::body::Bytes;
 use hyper::client::conn::http2 as client_http2;
 use hyper_util::rt::TokioIo;
 
-use smoltcp::iface::{Config, Interface};
-use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
+use smoltcp::wire::{IpAddress, Ipv4Address};
 
-use tokio::runtime::Builder;
+use serial_test::serial;
 use tokio_util::sync::CancellationToken;
 
 const SERVER_PORT: u16 = 8080;
@@ -182,72 +181,54 @@ async fn run_http2_test(
 }
 
 #[test]
+#[serial]
 fn test_http2_echo() {
     const NUM_CLIENTS: usize = 3;
 
     println!("\n=== HTTP/2 Echo Test ===\n");
 
-    // Create DPDK test context using the shared harness
-    let (_ctx, mut device) = DpdkTestContextBuilder::new()
+    let _eal = EalBuilder::new()
+        .no_huge()
+        .no_pci()
+        .in_memory()
+        .core_list("0")
         .vdev("net_ring0")
-        .mempool_name("http2_test_pool")
-        .build()
-        .expect("Failed to create DPDK test context");
+        .init()
+        .expect("Failed to initialize EAL");
 
-    println!("DPDK context created successfully");
+    println!("EAL initialized");
 
-    // Configure smoltcp interface
-    let mac_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
-    let config = Config::new(mac_addr.into());
-    let mut iface = Interface::new(config, &mut device, Instant::now());
+    DpdkApp::new()
+        .eth_dev(0)
+        .ip(SERVER_IP)
+        .gateway(Ipv4Address::new(192, 168, 1, 254))
+        .mbufs_per_queue(1024)
+        .descriptors(128, 128)
+        .run(|ctx: WorkerContext| async move {
+            let listener = TcpListener::bind_with_backlog(
+                &ctx.reactor,
+                SERVER_PORT,
+                16384,
+                16384,
+                NUM_CLIENTS + 1,
+            )
+            .expect("Failed to bind listener");
 
-    iface.update_ip_addrs(|ip_addrs| {
-        ip_addrs
-            .push(IpCidr::new(IpAddress::Ipv4(SERVER_IP), 24))
-            .unwrap();
-    });
+            let result = run_http2_test(ctx.reactor.clone(), listener, NUM_CLIENTS).await;
 
-    // Create tokio runtime
-    let rt = Builder::new_current_thread().enable_all().build().unwrap();
-    let local = tokio::task::LocalSet::new();
-
-    local.block_on(&rt, async {
-        // Create reactor
-        let reactor = Reactor::new(device, iface);
-        let handle = reactor.handle();
-
-        // Create cancel flag for reactor
-        let reactor_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let reactor_cancel_clone = reactor_cancel.clone();
-
-        // Spawn reactor
-        let reactor_task = tokio::task::spawn_local(async move {
-            reactor.run(reactor_cancel_clone).await;
+            match result {
+                Ok(()) => {
+                    println!("\n--- Test Result ---");
+                    println!(
+                        "\n✓ HTTP/2 Echo Test PASSED ({} clients served)!\n",
+                        NUM_CLIENTS
+                    );
+                }
+                Err(e) => {
+                    panic!("Test failed: {}", e);
+                }
+            }
         });
 
-        // Create listener with larger buffers for HTTP/2
-        let listener =
-            TcpListener::bind_with_backlog(&handle, SERVER_PORT, 16384, 16384, NUM_CLIENTS + 1)
-                .expect("Failed to bind listener");
-
-        // Run test
-        let result = run_http2_test(handle, listener, NUM_CLIENTS).await;
-
-        // Signal reactor to stop and wait for it to finish
-        reactor_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
-        let _ = reactor_task.await;
-
-        match result {
-            Ok(()) => {
-                println!("\n--- Test Result ---");
-                println!(
-                    "\n✓ HTTP/2 Echo Test PASSED ({} clients served)!\n",
-                    NUM_CLIENTS
-                );
-            }
-            Err(e) => {
-                panic!("Test failed: {}", e);
-            }
-        }
-    });
+    println!("\n=== HTTP/2 Echo Test Complete ===\n");
 }

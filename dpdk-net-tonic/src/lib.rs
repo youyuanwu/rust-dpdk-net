@@ -4,7 +4,7 @@
 //!
 //! - [`serve`] — a thin server wrapper that accepts tonic's `Router` and
 //!   delegates to [`dpdk_net_axum::serve`] after converting to an axum `Router`
-//!   via `.into_router()`.
+//!   via `.into_axum_router()`.
 //!
 //! - [`DpdkGrpcChannel`] — a `!Send` gRPC channel backed by a persistent
 //!   HTTP/2 connection over `dpdk-net`. Use this instead of

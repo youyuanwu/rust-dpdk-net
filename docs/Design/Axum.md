@@ -112,7 +112,7 @@ No `tower` dependency needed — `hyper_util::service::TowerToHyperService` hand
 | State extraction | ✅ | ✅ |
 | HTTP/1.1 | ✅ | ✅ |
 | HTTP/2 (h2c) | ✅ | ✅ |
-| Graceful shutdown | ✅ | ✅ (worker closure returns) |
+| Graceful shutdown | ✅ | ✅ (via `shutdown` future parameter) |
 | Multi-threaded | ✅ | ❌ (single-threaded per lcore) |
 | `Send` streams | Required | Not required |
 | Cross-thread task spawn | ✅ | ❌ |

@@ -7,7 +7,14 @@ This document describes the architecture of the `dpdk-net` crate, a Rust library
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Application Layer                            │
-│   (hyper HTTP servers, TcpStream, TcpListener, custom protocols)    │
+│   (axum, tonic gRPC, hyper, TcpStream, TcpListener)                 │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Framework Layer                                  │
+│   dpdk-net-axum (serve) │ dpdk-net-tonic (serve, channel)           │
+│   dpdk-net-util (DpdkApp, WorkerContext, HTTP client)               │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -57,7 +64,7 @@ This document describes the architecture of the `dpdk-net` crate, a Rust library
 
 ## Crate Structure
 
-The project is organized into three main crates:
+The project is organized into six crates:
 
 ### 1. `dpdk-net-sys` - FFI Bindings
 
@@ -98,13 +105,50 @@ The main library providing safe Rust abstractions over DPDK and smoltcp integrat
 | [async_net/socket.rs](../dpdk-net/src/tcp/async_net/socket.rs) | `TcpStream`, `TcpListener` - Async TCP sockets |
 | [async_net/tokio_compat.rs](../dpdk-net/src/tcp/async_net/tokio_compat.rs) | `TokioTcpStream` - Tokio `AsyncRead`/`AsyncWrite` adapter |
 
-### 3. `dpdk-net-test` - Test Harness & Examples
+### 3. `dpdk-net-util` - Application Framework & HTTP Client
+
+Shared utilities: `DpdkApp` (lcore-based application runner), `WorkerContext`, HTTP client, and `LocalExecutor`.
+
+| File | Purpose |
+|------|---------|---|
+| [app.rs](../dpdk-net-util/src/app.rs) | `DpdkApp` - Builder and multi-lcore runner |
+| [context.rs](../dpdk-net-util/src/context.rs) | `WorkerContext` - Per-lcore context (reactor, queue_id, etc.) |
+| [client.rs](../dpdk-net-util/src/client.rs) | `DpdkHttpClient` - High-level HTTP client |
+| [connection.rs](../dpdk-net-util/src/connection.rs) | `Connection` - Persistent HTTP/1.1 or HTTP/2 connection |
+| [pool.rs](../dpdk-net-util/src/pool.rs) | `ConnectionPool` - Per-host connection reuse |
+| [executor.rs](../dpdk-net-util/src/executor.rs) | `LocalExecutor` - `!Send` executor for hyper |
+
+Design: [App.md](Design/App.md), [Client.md](Design/Client.md)
+
+### 4. `dpdk-net-axum` - Axum Web Framework Integration
+
+Serves axum `Router` on dpdk-net sockets, bypassing `axum::serve()` (which requires `Send`).
+
+| File | Purpose |
+|------|---------|---|
+| [serve.rs](../dpdk-net-axum/src/serve.rs) | `serve()` - Accept loop with `AutoBuilder` + `LocalExecutor` |
+
+Re-exports `DpdkApp`, `WorkerContext` from `dpdk-net-util`.  
+Design: [Axum.md](Design/Axum.md)
+
+### 5. `dpdk-net-tonic` - Tonic gRPC Integration
+
+gRPC server and client for dpdk-net, built on top of `dpdk-net-axum`.
+
+| File | Purpose |
+|------|---------|---|
+| [serve.rs](../dpdk-net-tonic/src/serve.rs) | `serve()` - Routes → axum Router → `dpdk_net_axum::serve()` |
+| [channel.rs](../dpdk-net-tonic/src/channel.rs) | `DpdkGrpcChannel` - `!Send` gRPC client channel over HTTP/2 |
+
+Design: [Tonic.md](Design/Tonic.md)
+
+### 6. `dpdk-net-test` - Test Harness & Examples
 
 Testing infrastructure and example servers.
 
 | File | Purpose |
 |------|---------|
-| [dpdk_test.rs](../dpdk-net-test/src/dpdk_test.rs) | `DpdkTestContextBuilder` - Test harness for virtual devices |
+| [dpdk_test.rs](../dpdk-net-test/src/dpdk_test.rs) | `DpdkTestContext` / `create_test_context()` - Test harness for virtual devices |
 | [app/dpdk_server_runner.rs](../dpdk-net-test/src/app/dpdk_server_runner.rs) | `DpdkServerRunner` - Multi-queue production server runner |
 | [app/echo_server.rs](../dpdk-net-test/src/app/echo_server.rs) | TCP echo server implementation |
 | [app/http_server.rs](../dpdk-net-test/src/app/http_server.rs) | HTTP/1.1 and HTTP/2 servers using hyper |
@@ -471,21 +515,16 @@ Smoltcp reads directly from the DPDK mbuf - no copy needed for receive path.
 
 ## Test Infrastructure
 
-### DpdkTestContextBuilder
+### create_test_context()
 
-For unit tests using virtual devices (no hardware required):
+For manual (non-async) tests using virtual devices (no hardware required):
 
 ```rust
-let (ctx, device) = DpdkTestContextBuilder::new()
-    .vdev("net_ring0")  // Virtual loopback device
-    .mempool_name("test_pool")
-    .build()?;
+let (ctx, device) = create_test_context()?;
 ```
 
-Supports:
-- `net_ring0` - In-memory ring buffer (loopback)
-- `net_null0` - Null device (drop all packets)
-- `net_pcap0` - Capture to pcap file
+Creates a `net_ring0` virtual loopback device with default settings.
+For async tests, use `DpdkApp` from `dpdk-net-util` instead.
 
 ### DpdkServerRunner
 
@@ -512,14 +551,20 @@ Handles:
 
 ### Test Files
 
-| Test | Description |
-|------|-------------|
-| [tcp_echo_async_test.rs](../dpdk-net-test/tests/tcp_echo_async_test.rs) | Basic async TCP echo test |
-| [http_echo_test.rs](../dpdk-net-test/tests/http_echo_test.rs) | HTTP/1.1 with hyper |
-| [http2_echo_test.rs](../dpdk-net-test/tests/http2_echo_test.rs) | HTTP/2 (h2c) with hyper |
-| [http_auto_echo_test.rs](../dpdk-net-test/tests/http_auto_echo_test.rs) | Auto-detect HTTP version |
-| [manual_tcp_echo_test.rs](../dpdk-net-test/tests/manual_tcp_echo_test.rs) | Manual hardware device test |
-| [udp_echo_test.rs](../dpdk-net-test/tests/udp_echo_test.rs) | UDP echo test |
+Async tests use `DpdkApp` + `WorkerContext`. Manual tests use `create_test_context()` with raw smoltcp.
+
+| Test | Pattern | Description |
+|------|---------|-------------|
+| [app_echo_test.rs](../dpdk-net-axum/tests/app_echo_test.rs) | DpdkApp | Raw TCP echo via `DpdkApp` |
+| [axum_client_test.rs](../dpdk-net-axum/tests/axum_client_test.rs) | DpdkApp | Axum server + `DpdkHttpClient` |
+| [tonic_grpc_test.rs](../dpdk-net-test/tests/tonic_grpc_test.rs) | DpdkApp | gRPC server + `DpdkGrpcChannel` client |
+| [tcp_echo_async_test.rs](../dpdk-net-test/tests/tcp_echo_async_test.rs) | DpdkApp | Async TCP echo with `EchoServer` |
+| [http_echo_test.rs](../dpdk-net-test/tests/http_echo_test.rs) | DpdkApp | HTTP/1.1 with hyper |
+| [http2_echo_test.rs](../dpdk-net-test/tests/http2_echo_test.rs) | DpdkApp | HTTP/2 (h2c) with hyper |
+| [http_auto_echo_test.rs](../dpdk-net-test/tests/http_auto_echo_test.rs) | DpdkApp | Auto-detect HTTP version |
+| [manual_tcp_echo_test.rs](../dpdk-net-test/tests/manual_tcp_echo_test.rs) | create_test_context | Manual smoltcp polling (loopback) |
+| [manual_tcp_echo_stress_test.rs](../dpdk-net-test/tests/manual_tcp_echo_stress_test.rs) | create_test_context | Manual stress test (sequential clients) |
+| [udp_echo_test.rs](../dpdk-net-test/tests/udp_echo_test.rs) | Raw EAL | UDP echo test |
 
 ---
 
@@ -590,11 +635,13 @@ Meanwhile, Reactor::run() loop:
 |-------|---------|
 | `smoltcp` | User-space TCP/IP stack |
 | `tokio` | Async runtime |
+| `hyper` / `hyper-util` | HTTP client/server |
+| `axum` | Web framework (dpdk-net-axum) |
+| `tonic` / `prost` | gRPC framework + protobuf (dpdk-net-tonic) |
 | `arrayvec` | Fixed-size stack-allocated vectors |
 | `arc-swap` | Lock-free atomic Arc operations |
 | `nix` | Unix system calls |
 | `tracing` | Structured logging |
-| `hyper` | HTTP client/server (in tests) |
 
 ---
 

@@ -22,7 +22,14 @@ This enables building network applications (HTTP servers, proxies, etc.) that by
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Application Layer                            │
-│   (hyper HTTP servers, TcpStream, TcpListener, custom protocols)    │
+│   (axum, tonic gRPC, hyper, TcpStream, TcpListener)                 │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                       Framework Layer                               │
+│   dpdk-net-axum (serve) │ dpdk-net-tonic (serve, channel)           │
+│   dpdk-net-util (DpdkApp, WorkerContext, HTTP client)               │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -48,14 +55,29 @@ This enables building network applications (HTTP servers, proxies, etc.) that by
 
 ## Features
 
-- **Async/await support** - Custom `TcpListener`, `TcpStream` APIs (not tokio's) compatible with any async runtime
+- **Async/await support** - Custom `TcpListener`, `TcpStream` APIs compatible with tokio
+- **axum integration** - Serve axum `Router` directly on DPDK sockets (`dpdk-net-axum`)
+- **tonic gRPC** - gRPC server and client over DPDK (`dpdk-net-tonic`)
+- **HTTP client** - `DpdkHttpClient` for HTTP/1.1 and HTTP/2 requests (`dpdk-net-util`)
 - **Multi-queue scaling** - RSS (Receive Side Scaling) distributes connections across CPU cores
+- **DpdkApp framework** - Lcore-based application runner with per-queue smoltcp stacks
 - **CPU affinity** - Worker threads pinned to cores for optimal cache locality
-- **hyper compatible** - Use with hyper for HTTP/1.1 and HTTP/2 servers
+
+## Crates
+
+| Crate | Description |
+|-------|-------------|
+| `dpdk-net` | Core library: DPDK wrappers, smoltcp integration, async TCP sockets |
+| `dpdk-net-sys` | FFI bindings to DPDK C library (generated via bindgen) |
+| `dpdk-net-util` | `DpdkApp`, `WorkerContext`, HTTP client, `LocalExecutor` |
+| `dpdk-net-axum` | Axum web framework integration (`serve()`) |
+| `dpdk-net-tonic` | Tonic gRPC integration (server `serve()` + `DpdkGrpcChannel` client) |
+| `dpdk-net-test` | Test harness, example servers, integration tests |
 
 ## Documentation
-- [Architecture](docs/Architecture.md) - Implementation details.
-- [Benchmarks](docs/Bench/Benchmark.md) - Performance comparison with tokio on Azure.
+- [Architecture](docs/Architecture.md) - Crate structure and implementation details
+- [Design](docs/Design/) - Design docs for DpdkApp, Axum, Tonic, HTTP Client
+- [Benchmarks](docs/Bench/Benchmark.md) - Performance comparison with tokio on Azure
 - [Limitations](docs/Limitations.md) - Known limitations and constraints
 
 ## Requirements
@@ -66,39 +88,57 @@ This enables building network applications (HTTP servers, proxies, etc.) that by
 
 ## Getting Started
 
-### 1. Install DPDK
+### Install DPDK
 
 From package manager or build from source:
 
 ```sh
-# Clone this repo
 cmake -S . -B build
 cmake --build build --target dpdk_configure
 cmake --build build --target dpdk_build --parallel
 sudo cmake --build build --target dpdk_install
 ```
 
-### 2. Add dependency
+### Axum HTTP Server
 
-```toml
-[dependencies]
-dpdk-net = "0.1"
+```rust
+use dpdk_net_axum::{DpdkApp, WorkerContext, serve};
+use dpdk_net::socket::TcpListener;
+use axum::{Router, routing::get};
+use smoltcp::wire::Ipv4Address;
+
+fn main() {
+    // Initialize EAL (e.g., via EalBuilder)
+    // ...
+
+    let app = Router::new().route("/", get(|| async { "Hello from DPDK!" }));
+
+    DpdkApp::new()
+        .eth_dev(0)
+        .ip(Ipv4Address::new(10, 0, 0, 10))
+        .gateway(Ipv4Address::new(10, 0, 0, 1))
+        .run(move |ctx: WorkerContext| {
+            let app = app.clone();
+            async move {
+                let listener = TcpListener::bind(&ctx.reactor, 8080, 4096, 4096).unwrap();
+                serve(listener, app, std::future::pending::<()>()).await;
+            }
+        });
+}
 ```
 
-### 3. Run examples
+### Tonic gRPC Server
 
-```sh
-# Build examples
-cargo build --release --examples
+```rust
+use dpdk_net_tonic::serve;
+use dpdk_net::socket::TcpListener;
 
-# Run HTTP server (requires sudo and DPDK-compatible NIC)
-sudo ./target/release/examples/dpdk_http_server --interface eth1
+// Inside DpdkApp::run() closure:
+let greeter = GreeterServer::new(MyGreeter::default());
+let routes = tonic::service::Routes::new(greeter);
+let listener = TcpListener::bind(&ctx.reactor, 50051, 4096, 4096).unwrap();
+serve(listener, routes, std::future::pending::<()>()).await;
 ```
-
-## Examples
-
-- [dpdk_http_server](dpdk-net-test/examples/dpdk_http_server.rs) - HTTP server with DPDK or tokio backend
-- [dpdk_tcp_server](dpdk-net-test/examples/dpdk_tcp_server.rs) - Simple TCP echo server
 
 ## Project Status
 

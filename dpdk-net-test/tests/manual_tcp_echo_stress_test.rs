@@ -6,7 +6,7 @@
 //! Note: This is a separate test file because DPDK has global state that persists
 //! across tests within the same process.
 
-use dpdk_net_test::dpdk_test::DpdkTestContextBuilder;
+use dpdk_net_test::dpdk_test::create_test_context;
 use dpdk_net_test::manual::tcp_echo::{EchoServer, SocketConfig, run_stress_test};
 use smoltcp::iface::{Config, Interface, SocketSet};
 use smoltcp::time::Instant;
@@ -24,11 +24,7 @@ fn test_tcp_echo_stress() {
     const MESSAGES_PER_ROUND: usize = 5;
 
     // Create DPDK test context using the shared harness
-    let (_ctx, mut device) = DpdkTestContextBuilder::new()
-        .vdev("net_ring0")
-        .mempool_name("stress_test_pool")
-        .build()
-        .expect("Failed to create DPDK test context");
+    let (_ctx, mut device) = create_test_context().expect("Failed to create DPDK test context");
 
     println!("DPDK context created successfully");
 

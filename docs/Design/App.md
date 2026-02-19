@@ -3,7 +3,7 @@
 High-level application framework using DPDK's native lcore threading model. Each lcore gets its own RX/TX queue, smoltcp network stack, and tokio runtime.
 
 Crate: [`dpdk-net-util`](../../dpdk-net-util/src/app.rs) (`DpdkApp`, `WorkerContext`)  
-Tests: [`app_echo_test.rs`](../../dpdk-net-axum/tests/app_echo_test.rs), [`axum_client_test.rs`](../../dpdk-net-axum/tests/axum_client_test.rs)
+Tests: [`app_echo_test.rs`](../../dpdk-net-axum/tests/app_echo_test.rs), [`axum_client_test.rs`](../../dpdk-net-axum/tests/axum_client_test.rs), [`tonic_grpc_test.rs`](../../dpdk-net-test/tests/tonic_grpc_test.rs), and all async tests in `dpdk-net-test/tests/`
 
 ## Architecture
 

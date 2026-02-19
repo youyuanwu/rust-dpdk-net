@@ -1,10 +1,10 @@
 //! DPDK Test Harness
 //!
-//! Provides reusable components for DPDK-based tests including:
+//! Provides reusable components for DPDK-based manual (non-async) tests:
 //! - `DpdkTestContext` - RAII struct holding EAL, EthDev
-//! - Builder for configuring test scenarios
+//! - `create_test_context()` - creates a virtual ring loopback setup
 //!
-//! Uses `DpdkDevice` from `dpdk_net::tcp` for the smoltcp Device implementation.
+//! For async tests, prefer `DpdkApp` from `dpdk-net-util`.
 
 use dpdk_net::api::rte::eal::{Eal, EalBuilder};
 use dpdk_net::api::rte::eth::EthDev;
@@ -57,139 +57,29 @@ impl Drop for DpdkTestContext {
     }
 }
 
-/// Builder for creating a DPDK test context.
+/// Create a DPDK test context with a virtual ring device for loopback testing.
+///
+/// Initializes EAL (no hugepages, no PCI), creates a mempool and eth device,
+/// and returns the context (must be kept alive) and the `DpdkDevice` for smoltcp.
 ///
 /// # Example
 /// ```no_run
-/// use dpdk_net_test::dpdk_test::DpdkTestContextBuilder;
+/// use dpdk_net_test::dpdk_test::create_test_context;
 ///
-/// let (ctx, device) = DpdkTestContextBuilder::new()
-///     .vdev("net_ring0")
-///     .mempool_name("test_pool")
-///     .build()
+/// let (ctx, device) = create_test_context()
 ///     .expect("Failed to create DPDK test context");
 /// ```
-pub struct DpdkTestContextBuilder {
-    vdev: Option<String>,
-    eth_dev_config: EthDevConfig,
-}
-
-impl Default for DpdkTestContextBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl DpdkTestContextBuilder {
-    /// Create a new builder with default settings.
-    pub fn new() -> Self {
-        Self {
-            vdev: None,
-            eth_dev_config: EthDevConfig::new().mempool_name("test_mempool"),
-        }
-    }
-
-    /// Add a virtual device (e.g., "net_ring0").
-    pub fn vdev(mut self, vdev: impl Into<String>) -> Self {
-        self.vdev = Some(vdev.into());
-        self
-    }
-
-    /// Set the mempool name.
-    pub fn mempool_name(mut self, name: impl Into<String>) -> Self {
-        self.eth_dev_config = self.eth_dev_config.mempool_name(name);
-        self
-    }
-
-    /// Set the number of mbufs in the pool.
-    pub fn num_mbufs(mut self, n: u32) -> Self {
-        self.eth_dev_config = self.eth_dev_config.num_mbufs(n);
-        self
-    }
-
-    /// Set the data room size for mbufs.
-    pub fn data_room_size(mut self, size: u16) -> Self {
-        self.eth_dev_config = self.eth_dev_config.data_room_size(size);
-        self
-    }
-
-    /// Set the number of RX queues.
-    pub fn nb_rx_queues(mut self, n: u16) -> Self {
-        self.eth_dev_config = self.eth_dev_config.nb_rx_queues(n);
-        self
-    }
-
-    /// Set the number of TX queues.
-    pub fn nb_tx_queues(mut self, n: u16) -> Self {
-        self.eth_dev_config = self.eth_dev_config.nb_tx_queues(n);
-        self
-    }
-
-    /// Set the number of descriptors per queue.
-    pub fn nb_desc(mut self, n: u16) -> Self {
-        self.eth_dev_config = self.eth_dev_config.nb_desc(n);
-        self
-    }
-
-    /// Set the MTU.
-    pub fn mtu(mut self, mtu: usize) -> Self {
-        self.eth_dev_config = self.eth_dev_config.mtu(mtu);
-        self
-    }
-
-    /// Set the port ID.
-    pub fn port_id(mut self, id: u16) -> Self {
-        self.eth_dev_config = self.eth_dev_config.port_id(id);
-        self
-    }
-
-    /// Build the test context and DpdkDevice.
-    ///
-    /// Returns the context (which must be kept alive) and the device for smoltcp/Reactor.
-    pub fn build(self) -> Result<(DpdkTestContext, DpdkDevice), dpdk_net::api::Errno> {
-        // Initialize EAL (test mode: no hugepages, no PCI)
-        let mut eal_builder = EalBuilder::new().no_huge().no_pci();
-
-        if let Some(vdev) = &self.vdev {
-            eal_builder = eal_builder.vdev(vdev);
-        }
-
-        let eal = eal_builder.init()?;
-
-        // Build mempool and eth device using shared config
-        let (mempool, eth_dev) = self.eth_dev_config.clone().build()?;
-
-        // Create device for queue 0
-        let device = self.eth_dev_config.create_device(mempool, 0);
-
-        let context = DpdkTestContext { _eal: eal, eth_dev };
-
-        Ok((context, device))
-    }
-
-    /// Build only the EthDev and DpdkDevice, assuming EAL is already initialized.
-    ///
-    /// Use this when you have a global EAL and want to recreate devices per test.
-    /// Returns the EthDev and DpdkDevice (caller is responsible for cleanup).
-    pub fn build_device_only(self) -> Result<(EthDev, DpdkDevice), dpdk_net::api::Errno> {
-        // Build mempool and eth device using shared config
-        let (mempool, eth_dev) = self.eth_dev_config.clone().build()?;
-
-        // Create device for queue 0
-        let device = self.eth_dev_config.create_device(mempool, 0);
-
-        Ok((eth_dev, device))
-    }
-}
-
-/// Convenience function to create a simple loopback test setup.
-///
-/// Creates a DPDK context with a virtual ring device for loopback testing.
-pub fn create_loopback_test_setup(
-    mempool_name: &str,
-) -> Result<(DpdkTestContext, DpdkDevice), dpdk_net::api::Errno> {
-    DpdkTestContextBuilder::new()
+pub fn create_test_context() -> Result<(DpdkTestContext, DpdkDevice), dpdk_net::api::Errno> {
+    let eal = EalBuilder::new()
+        .no_huge()
+        .no_pci()
         .vdev("net_ring0")
-        .mempool_name(mempool_name)
-        .build()
+        .init()?;
+
+    let eth_dev_config = EthDevConfig::new().mempool_name("test_mempool");
+    let (mempool, eth_dev) = eth_dev_config.clone().build()?;
+    let device = eth_dev_config.create_device(mempool, 0);
+
+    let context = DpdkTestContext { _eal: eal, eth_dev };
+    Ok((context, device))
 }

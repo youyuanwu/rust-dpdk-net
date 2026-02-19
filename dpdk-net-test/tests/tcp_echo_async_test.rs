@@ -12,15 +12,14 @@
 //! across tests within the same process.
 
 use dpdk_net::BoxError;
-use dpdk_net::runtime::{Reactor, ReactorHandle};
+use dpdk_net::api::rte::eal::EalBuilder;
+use dpdk_net::runtime::ReactorHandle;
 use dpdk_net::socket::{TcpListener, TcpStream};
+use dpdk_net_axum::{DpdkApp, WorkerContext};
 use dpdk_net_test::app::echo_server::{EchoServer, ServerStats};
-use dpdk_net_test::dpdk_test::DpdkTestContextBuilder;
-use smoltcp::iface::{Config, Interface};
-use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
+use serial_test::serial;
+use smoltcp::wire::{IpAddress, Ipv4Address};
 use std::sync::Arc;
-use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 
 const SERVER_PORT: u16 = 8080;
@@ -153,74 +152,52 @@ async fn run_multi_client_test(
 }
 
 #[test]
+#[serial]
 fn test_tcp_echo_async() {
     println!("\n=== TCP Echo Async Test ===\n");
 
-    // Create DPDK test context using the shared harness (with pool for Reactor)
-    let (_ctx, mut device) = DpdkTestContextBuilder::new()
+    let _eal = EalBuilder::new()
+        .no_huge()
+        .no_pci()
+        .in_memory()
+        .core_list("0")
         .vdev("net_ring0")
-        .mempool_name("async_test_pool")
-        .build()
-        .expect("Failed to create DPDK test context");
+        .init()
+        .expect("Failed to initialize EAL");
 
-    println!("DPDK context created successfully");
+    println!("EAL initialized");
 
-    // Configure smoltcp interface
-    let mac_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
-    let config = Config::new(mac_addr.into());
-    let mut iface = Interface::new(config, &mut device, Instant::now());
+    DpdkApp::new()
+        .eth_dev(0)
+        .ip(SERVER_IP)
+        .gateway(Ipv4Address::new(192, 168, 1, 254))
+        .mbufs_per_queue(1024)
+        .descriptors(128, 128)
+        .run(|ctx: WorkerContext| async move {
+            let listener = TcpListener::bind_with_backlog(
+                &ctx.reactor,
+                SERVER_PORT,
+                4096,
+                4096,
+                NUM_CLIENTS + 1,
+            )
+            .expect("Failed to bind listener");
 
-    iface.update_ip_addrs(|ip_addrs| {
-        ip_addrs
-            .push(IpCidr::new(IpAddress::Ipv4(SERVER_IP), 24))
-            .unwrap();
-    });
+            let result = run_multi_client_test(ctx.reactor.clone(), listener, NUM_CLIENTS).await;
 
-    // Create single-threaded tokio runtime
-    // We use current_thread because DPDK and smoltcp are not thread-safe
-    let rt = Builder::new_current_thread().enable_all().build().unwrap();
-
-    // Create a LocalSet to run !Send futures (Rc-based reactor)
-    let local = tokio::task::LocalSet::new();
-
-    local.block_on(&rt, async {
-        // Create the async reactor
-        let reactor = Reactor::new(device, iface);
-        let handle = reactor.handle();
-
-        // Create cancel flag for reactor
-        let reactor_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let reactor_cancel_clone = reactor_cancel.clone();
-
-        // Spawn the reactor polling task (runs in background)
-        let reactor_task = tokio::task::spawn_local(async move {
-            reactor.run(reactor_cancel_clone).await;
+            match result {
+                Ok(()) => {
+                    println!("\n--- Test Result ---");
+                    println!(
+                        "\n✓ TCP Echo Async Test PASSED ({} clients served)!\n",
+                        NUM_CLIENTS
+                    );
+                }
+                Err(e) => {
+                    panic!("Test failed: {}", e);
+                }
+            }
         });
 
-        // Create server listener with backlog = NUM_CLIENTS + 1 to handle burst
-        let listener =
-            TcpListener::bind_with_backlog(&handle, SERVER_PORT, 4096, 4096, NUM_CLIENTS + 1)
-                .expect("Failed to bind listener");
-
-        // Run the async test with separate tasks for clients and server
-        let result = run_multi_client_test(handle, listener, NUM_CLIENTS).await;
-
-        // Signal reactor to stop and wait for it to finish
-        reactor_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
-        let _ = reactor_task.await;
-
-        // Verify the result
-        match result {
-            Ok(()) => {
-                println!("\n--- Test Result ---");
-                println!(
-                    "\n✓ TCP Echo Async Test PASSED ({} clients served)!\n",
-                    NUM_CLIENTS
-                );
-            }
-            Err(e) => {
-                panic!("Test failed: {}", e);
-            }
-        }
-    });
+    println!("\n=== TCP Echo Async Test Complete ===\n");
 }

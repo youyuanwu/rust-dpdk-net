@@ -9,7 +9,7 @@ use std::time::Duration;
 use super::tcp_echo::{EchoClient, EchoServer, SocketConfig, run_echo_test};
 use crate::dpdk_test::{
     DEFAULT_MBUF_DATA_ROOM_SIZE, DEFAULT_MBUF_HEADROOM, DEFAULT_MTU, DpdkDevice, DpdkTestContext,
-    DpdkTestContextBuilder,
+    create_test_context,
 };
 
 /// Get PCI address for a network interface.
@@ -291,7 +291,7 @@ pub fn tcp_echo_test(use_hardware: bool) {
     println!("[Debug] Detected gateway: {:?}", gateway);
 
     // Build DPDK context using new wrappers
-    let (_ctx, mut device): (DpdkTestContext, DpdkDevice) = if use_hardware {
+    let (ctx, mut device): (DpdkTestContext, DpdkDevice) = if use_hardware {
         // Dynamically get PCI address for eth1
         let pci_addr = get_pci_addr(interface).expect("Failed to get PCI address for eth1");
 
@@ -335,18 +335,11 @@ pub fn tcp_echo_test(use_hardware: bool) {
         let ctx = DpdkTestContext::from_parts(eal, eth_dev);
         (ctx, device)
     } else {
-        DpdkTestContextBuilder::new()
-            .vdev("net_ring0")
-            .mempool_name("tcp_pool")
-            .build()
-            .expect("Failed to create DPDK test context")
+        create_test_context().expect("Failed to create DPDK test context")
     };
 
     // Get the actual MAC address from DPDK device
-    let mac = _ctx
-        .eth_dev()
-        .mac_addr()
-        .expect("Failed to get MAC address");
+    let mac = ctx.eth_dev().mac_addr().expect("Failed to get MAC address");
     let mac_addr = EthernetAddress(mac.addr_bytes);
 
     run_tcp_echo_with_device(&mut device, ip_addr, gateway, mac_addr);
