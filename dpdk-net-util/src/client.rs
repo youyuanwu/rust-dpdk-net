@@ -93,32 +93,34 @@ impl DpdkHttpClient {
         port: u16,
         local_port: u16,
     ) -> Result<Connection, Error> {
-        let fut = match self.config.http_version {
-            HttpVersion::Http1 => {
-                Connection::http1(
-                    &self.reactor,
-                    addr,
-                    port,
-                    local_port,
-                    self.config.rx_buffer_size,
-                    self.config.tx_buffer_size,
-                )
+        tokio::time::timeout(self.config.connect_timeout, async {
+            match self.config.http_version {
+                HttpVersion::Http1 => {
+                    Connection::http1(
+                        &self.reactor,
+                        addr,
+                        port,
+                        local_port,
+                        self.config.rx_buffer_size,
+                        self.config.tx_buffer_size,
+                    )
+                    .await
+                }
+                HttpVersion::Http2 => {
+                    Connection::http2(
+                        &self.reactor,
+                        addr,
+                        port,
+                        local_port,
+                        self.config.rx_buffer_size,
+                        self.config.tx_buffer_size,
+                    )
+                    .await
+                }
             }
-            HttpVersion::Http2 => {
-                Connection::http2(
-                    &self.reactor,
-                    addr,
-                    port,
-                    local_port,
-                    self.config.rx_buffer_size,
-                    self.config.tx_buffer_size,
-                )
-            }
-        };
-
-        tokio::time::timeout(self.config.connect_timeout, fut)
-            .await
-            .map_err(|_| Error::ConnectTimeout)?
+        })
+        .await
+        .map_err(|_| Error::ConnectTimeout)?
     }
 
     /// Send a one-shot HTTP request, creating a new connection.
