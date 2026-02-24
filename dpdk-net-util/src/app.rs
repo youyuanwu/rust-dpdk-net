@@ -70,7 +70,37 @@ pub struct DpdkApp {
     mbufs_per_queue: u32,
     rx_desc: u16,
     tx_desc: u16,
+    subnet_prefix: u8,
 }
+
+/// Errors returned by [`DpdkApp::try_run`].
+#[derive(Debug)]
+pub enum DpdkAppError {
+    /// IP address was not configured.
+    MissingIpAddress,
+    /// Gateway was not configured.
+    MissingGateway,
+    /// No lcores available.
+    NoLcores,
+    /// Failed to query or configure the Ethernet device.
+    DeviceError(String),
+    /// Failed to create mempool.
+    MempoolError(String),
+}
+
+impl std::fmt::Display for DpdkAppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingIpAddress => write!(f, "IP address not set. Call ip() before run()"),
+            Self::MissingGateway => write!(f, "Gateway not set. Call gateway() before run()"),
+            Self::NoLcores => write!(f, "No lcores available. Ensure EAL is initialized with -l flag"),
+            Self::DeviceError(e) => write!(f, "Device error: {e}"),
+            Self::MempoolError(e) => write!(f, "Mempool error: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for DpdkAppError {}
 
 impl Default for DpdkApp {
     fn default() -> Self {
@@ -88,6 +118,7 @@ impl DpdkApp {
             mbufs_per_queue: 8192,
             rx_desc: 1024,
             tx_desc: 1024,
+            subnet_prefix: 24,
         }
     }
 
@@ -122,6 +153,12 @@ impl DpdkApp {
         self
     }
 
+    /// Set subnet prefix length (default: 24, i.e., /24).
+    pub fn subnet_prefix(mut self, prefix: u8) -> Self {
+        self.subnet_prefix = prefix;
+        self
+    }
+
     /// Run the application.
     ///
     /// Launches work on all worker lcores and runs queue 0 on the main lcore.
@@ -144,19 +181,30 @@ impl DpdkApp {
         F: Fn(WorkerContext) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + 'static,
     {
-        let ip_addr = self
-            .ip_addr
-            .expect("IP address not set. Call ip() before run()");
-        let gateway = self
-            .gateway
-            .expect("Gateway not set. Call gateway() before run()");
+        if let Err(e) = self.try_run(server) {
+            panic!("{e}");
+        }
+    }
+
+    /// Run the application, returning errors instead of panicking.
+    ///
+    /// This is the fallible version of [`run`](Self::run). See its documentation
+    /// for details on behavior.
+    pub fn try_run<F, Fut>(self, server: F) -> Result<(), DpdkAppError>
+    where
+        F: Fn(WorkerContext) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + 'static,
+    {
+        let ip_addr = self.ip_addr.ok_or(DpdkAppError::MissingIpAddress)?;
+        let gateway = self.gateway.ok_or(DpdkAppError::MissingGateway)?;
+        let subnet_prefix = self.subnet_prefix;
 
         // Collect lcores
         let lcores: Vec<Lcore> = Lcore::all().collect();
         let num_queues = lcores.len();
 
         if num_queues == 0 {
-            panic!("No lcores available. Ensure EAL is initialized with -l flag.");
+            return Err(DpdkAppError::NoLcores);
         }
 
         info!(
@@ -164,13 +212,14 @@ impl DpdkApp {
             port_id = self.port_id,
             ip = %ip_addr,
             %gateway,
+            subnet_prefix,
             "DpdkApp starting"
         );
 
         // Query device info
         let dev_info = EthDev::new(self.port_id)
             .info()
-            .expect("Failed to get device info");
+            .map_err(|e| DpdkAppError::DeviceError(format!("{e:?}")))?;
         let reta_size = dev_info.reta_size as usize;
 
         // Create mempool
@@ -180,13 +229,14 @@ impl DpdkApp {
             .data_room_size(DEFAULT_MBUF_DATA_ROOM_SIZE);
 
         let mempool = Arc::new(
-            MemPool::create("dpdk_app_pool", &mempool_config).expect("Failed to create mempool"),
+            MemPool::create("dpdk_app_pool", &mempool_config)
+                .map_err(|e| DpdkAppError::MempoolError(format!("{e:?}")))?,
         );
 
-        // Configure ethernet device with RSS if supported
+        // Configure ethernet device with RSS for both TCP and UDP if supported
         let eth_conf = if reta_size > 0 && num_queues > 1 {
-            info!(reta_size, "Enabling RSS for multi-queue");
-            EthConf::new().rss_with_hash(rss_hf::NONFRAG_IPV4_TCP | rss_hf::NONFRAG_IPV6_TCP)
+            info!(reta_size, "Enabling RSS for multi-queue (TCP + UDP)");
+            EthConf::new().rss_with_hash(rss_hf::TCP | rss_hf::UDP)
         } else {
             if num_queues > 1 {
                 warn!(
@@ -203,10 +253,12 @@ impl DpdkApp {
             .rx_queue_conf(RxQueueConf::new().nb_desc(self.rx_desc))
             .tx_queue_conf(TxQueueConf::new().nb_desc(self.tx_desc))
             .build(&mempool)
-            .expect("Failed to configure ethernet device");
+            .map_err(|e| DpdkAppError::DeviceError(format!("{e:?}")))?;
 
         // Get MAC address
-        let mac = eth_dev.mac_addr().expect("Failed to get MAC address");
+        let mac = eth_dev
+            .mac_addr()
+            .map_err(|e| DpdkAppError::DeviceError(format!("{e:?}")))?;
         let mac_addr = EthernetAddress(mac.addr_bytes);
 
         info!(
@@ -253,12 +305,13 @@ impl DpdkApp {
                         mac_addr,
                         ip_addr,
                         gateway,
+                        subnet_prefix,
                         shared_arp_cache,
                         server,
                     );
                     0
                 })
-                .expect("Failed to launch on worker lcore");
+                .map_err(|e| DpdkAppError::DeviceError(format!("Failed to launch lcore: {e:?}")))?;
         }
 
         // Run main queue on main lcore
@@ -269,6 +322,7 @@ impl DpdkApp {
             mac_addr,
             ip_addr,
             gateway,
+            subnet_prefix,
             shared_arp_cache,
             server,
         );
@@ -284,6 +338,7 @@ impl DpdkApp {
         drop(mempool);
 
         info!("DpdkApp shutdown complete");
+        Ok(())
     }
 
     /// Run a single worker on the current lcore.
@@ -295,6 +350,7 @@ impl DpdkApp {
         mac_addr: EthernetAddress,
         ip_addr: Ipv4Address,
         gateway: Ipv4Address,
+        subnet_prefix: u8,
         shared_arp_cache: Option<SharedArpCache>,
         server: Arc<F>,
     ) where
@@ -335,13 +391,13 @@ impl DpdkApp {
 
         iface.update_ip_addrs(|ip_addrs| {
             ip_addrs
-                .push(IpCidr::new(IpAddress::Ipv4(ip_addr), 24))
+                .push(IpCidr::new(IpAddress::Ipv4(ip_addr), subnet_prefix))
                 .unwrap();
         });
         iface.routes_mut().add_default_ipv4_route(gateway).unwrap();
 
         // Create tokio runtime
-        let rt = Builder::new_current_thread().build().unwrap();
+        let rt = Builder::new_current_thread().enable_all().build().unwrap();
         let local = tokio::task::LocalSet::new();
 
         local.block_on(&rt, async {
@@ -359,12 +415,7 @@ impl DpdkApp {
             });
 
             // Create worker context
-            let ctx = WorkerContext {
-                lcore,
-                queue_id,
-                socket_id: lcore.socket_id(),
-                reactor: handle,
-            };
+            let ctx = WorkerContext::new(lcore, queue_id, lcore.socket_id(), handle);
 
             // Run user's server/client
             server(ctx).await;

@@ -217,7 +217,7 @@ impl EthConf {
     /// Enable RSS mode with explicit Microsoft RSS key
     pub fn rss_with_key(mut self) -> Self {
         self.rx_mode.mq_mode = RxMqMode::Rss;
-        self.rss_hf = rss_hf::IP | rss_hf::TCP;
+        self.rss_hf = rss_hf::IP | rss_hf::TCP | rss_hf::UDP;
         self.rss_key = Some(RSS_KEY_40.to_vec());
         self
     }

@@ -137,8 +137,7 @@ impl TxQueue {
 
         // Remove sent packets from the buffer.
         // We need to forget them since DPDK has taken ownership and will free them.
-        for _ in 0..sent {
-            let mbuf = mbufs.remove(0);
+        for mbuf in mbufs.drain(..sent as usize) {
             // Don't drop - DPDK owns the mbuf now
             std::mem::forget(mbuf);
         }

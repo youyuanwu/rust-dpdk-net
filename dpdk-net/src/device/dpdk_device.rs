@@ -266,6 +266,15 @@ impl Device for DpdkDevice {
     }
 
     fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
+        // Pre-check: deny token if mempool is exhausted.
+        // This prevents the silent packet drop in consume()'s fallback path.
+        if self.mempool.avail_count() == 0 {
+            self.flush_tx(); // Try to free some mbufs by draining TX ring
+            if self.mempool.avail_count() == 0 {
+                return None;
+            }
+        }
+
         if self.tx_batch.len() < self.tx_batch.capacity() {
             Some(DpdkTxTokenWithPool {
                 mempool: &self.mempool,
@@ -323,7 +332,9 @@ impl<'a> phy::TxToken for DpdkTxTokenWithPool<'a> {
 
             result
         } else {
-            // Fallback if allocation fails - packet data is lost
+            // Mempool exhausted despite pre-check in transmit() — should be rare.
+            // We must still call f() since smoltcp expects it, but the packet is lost.
+            tracing::error!("TX mempool unexpectedly exhausted in consume(); packet dropped");
             let mut buffer = vec![0u8; len];
             f(&mut buffer)
         }

@@ -193,8 +193,8 @@ pub fn build_arp_reply_for_injection(
     our_ip: Ipv4Addr,
     peer_mac: MacAddress,
     peer_ip: Ipv4Addr,
-) -> Vec<u8> {
-    let mut packet = vec![0u8; 42]; // Ethernet (14) + ARP (28)
+) -> [u8; 42] {
+    let mut packet = [0u8; 42]; // Ethernet (14) + ARP (28)
 
     // Ethernet header
     packet[0..6].copy_from_slice(&our_mac); // Destination MAC (us)

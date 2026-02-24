@@ -55,5 +55,5 @@ mod traits;
 
 pub use reactor::{Reactor, ReactorHandle, ReactorInner};
 #[cfg(feature = "tokio")]
-pub use tokio_compat::{TokioRuntime, TokioTcpStream};
+pub use tokio_compat::{TokioRuntime, TokioTcpStream, TokioUdpSocket};
 pub use traits::Runtime;

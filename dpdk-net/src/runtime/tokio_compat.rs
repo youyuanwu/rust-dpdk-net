@@ -1,9 +1,11 @@
-//! Tokio compatibility wrappers for async TCP sockets.
+//! Tokio compatibility wrappers for async sockets.
 //!
 //! This module provides:
 //! - [`TokioRuntime`]: Implementation of the [`Runtime`](super::Runtime) trait for tokio
 //! - [`TokioTcpStream`]: A wrapper around [`TcpStream`](crate::socket::TcpStream) that implements
 //!   tokio's [`AsyncRead`](tokio::io::AsyncRead) and [`AsyncWrite`](tokio::io::AsyncWrite) traits
+//! - [`TokioUdpSocket`]: A wrapper around [`UdpSocket`](crate::socket::UdpSocket) providing
+//!   tokio-style async methods for datagram I/O
 //!
 //! # Example
 //!
@@ -23,8 +25,10 @@
 //! ```
 
 use super::Runtime;
-use crate::socket::TcpStream;
+use crate::socket::{TcpStream, UdpSocket};
 use smoltcp::socket::tcp::{self, RecvError, State};
+use smoltcp::socket::udp::{RecvError as UdpRecvError, SendError as UdpSendError, UdpMetadata};
+use smoltcp::wire::IpEndpoint;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -138,18 +142,14 @@ impl AsyncWrite for TokioTcpStream {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
-        let inner = this.inner.reactor.borrow_mut();
-        let socket = inner.sockets.get::<tcp::Socket>(this.inner.handle);
+        let mut inner = this.inner.reactor.borrow_mut();
+        let socket = inner.sockets.get_mut::<tcp::Socket>(this.inner.handle);
 
         // smoltcp doesn't have explicit flush - data is sent when egress is polled.
         // We consider flush complete when the send buffer is empty.
         if socket.send_queue() == 0 {
             Poll::Ready(Ok(()))
         } else {
-            // Register waker to be notified when send buffer drains
-            drop(inner);
-            let mut inner = this.inner.reactor.borrow_mut();
-            let socket = inner.sockets.get_mut::<tcp::Socket>(this.inner.handle);
             socket.register_send_waker(cx.waker());
             Poll::Pending
         }
@@ -181,7 +181,7 @@ impl AsyncWrite for TokioTcpStream {
             match socket.state() {
                 State::Closed | State::TimeWait => Poll::Ready(Ok(())),
                 _ => {
-                    socket.register_send_waker(cx.waker());
+                    socket.register_recv_waker(cx.waker());
                     Poll::Pending
                 }
             }
@@ -192,5 +192,88 @@ impl AsyncWrite for TokioTcpStream {
 impl From<TcpStream> for TokioTcpStream {
     fn from(stream: TcpStream) -> Self {
         Self::new(stream)
+    }
+}
+
+/// A wrapper around [`UdpSocket`] providing tokio-style async methods.
+///
+/// Unlike [`TokioTcpStream`] which implements `AsyncRead`/`AsyncWrite` (stream
+/// protocols), UDP is datagram-based. This wrapper provides `send_to()` and
+/// `recv_from()` async methods that match tokio's `UdpSocket` API.
+///
+/// # Example
+///
+/// ```no_run
+/// use dpdk_net::socket::UdpSocket;
+/// use dpdk_net::runtime::tokio_compat::TokioUdpSocket;
+/// use smoltcp::wire::IpEndpoint;
+///
+/// async fn example(socket: UdpSocket) {
+///     let socket = TokioUdpSocket::new(socket);
+///     let mut buf = [0u8; 1500];
+///     let (n, meta) = socket.recv_from(&mut buf).await.unwrap();
+///     socket.send_to(&buf[..n], meta.endpoint).await.unwrap();
+/// }
+/// ```
+pub struct TokioUdpSocket {
+    inner: UdpSocket,
+}
+
+impl TokioUdpSocket {
+    /// Create a new tokio-compatible wrapper around a [`UdpSocket`].
+    pub fn new(socket: UdpSocket) -> Self {
+        Self { inner: socket }
+    }
+
+    /// Get a reference to the underlying [`UdpSocket`].
+    pub fn get_ref(&self) -> &UdpSocket {
+        &self.inner
+    }
+
+    /// Get a mutable reference to the underlying [`UdpSocket`].
+    pub fn get_mut(&mut self) -> &mut UdpSocket {
+        &mut self.inner
+    }
+
+    /// Consume this wrapper and return the underlying [`UdpSocket`].
+    pub fn into_inner(self) -> UdpSocket {
+        self.inner
+    }
+
+    /// Set the default remote endpoint (connected mode).
+    pub fn connect(&mut self, endpoint: IpEndpoint) {
+        self.inner.connect(endpoint);
+    }
+
+    /// Send a datagram to the specified endpoint.
+    pub async fn send_to(&self, data: &[u8], endpoint: IpEndpoint) -> Result<usize, UdpSendError> {
+        self.inner.send_to(data, endpoint).await
+    }
+
+    /// Send a datagram to the connected endpoint.
+    ///
+    /// # Panics
+    /// Panics if [`connect`](Self::connect) was not called first.
+    pub async fn send(&self, data: &[u8]) -> Result<usize, UdpSendError> {
+        self.inner.send(data).await
+    }
+
+    /// Receive a datagram, returning bytes read and source metadata.
+    pub async fn recv_from(
+        &self,
+        buf: &mut [u8],
+    ) -> Result<(usize, UdpMetadata), UdpRecvError> {
+        self.inner.recv_from(buf).await
+    }
+
+    /// Receive a datagram, returning only the number of bytes read.
+    pub async fn recv(&self, buf: &mut [u8]) -> Result<usize, UdpRecvError> {
+        self.inner.recv(buf).await
+    }
+}
+
+impl From<UdpSocket> for TokioUdpSocket {
+    fn from(socket: UdpSocket) -> Self {
+        Self::new(socket)
     }
 }
