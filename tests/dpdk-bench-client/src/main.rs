@@ -1,6 +1,6 @@
-//! HTTP benchmark client similar to wrk
+//! HTTP/UDP benchmark client similar to wrk
 //!
-//! A high-performance HTTP benchmark tool for testing DPDK-based servers.
+//! A high-performance benchmark tool for testing DPDK-based servers.
 //!
 //! # Usage
 //!
@@ -11,11 +11,16 @@
 //! # Hyper mode (supports HTTP/2)
 //! dpdk-bench-client --mode hyper -c 100 -d 30s http://10.0.0.4:8080/
 //! dpdk-bench-client --mode hyper --http2 -c 100 -d 30s http://10.0.0.4:8080/
+//!
+//! # UDP echo mode (measures PPS, RTT, loss)
+//! dpdk-bench-client --mode udp -c 10 -d 10s 10.0.0.4:8080
+//! dpdk-bench-client --mode udp -c 10 -d 10s --packet-size 1024 10.0.0.4:8080
 //! ```
 
 mod hyper_client;
 mod raw_client;
 mod stats;
+mod udp_client;
 
 use clap::{Parser, ValueEnum};
 use serde::Serialize;
@@ -30,6 +35,8 @@ enum ClientMode {
     Raw,
     /// Hyper-based client with HTTP/2 support
     Hyper,
+    /// UDP echo client for measuring PPS, RTT, and loss
+    Udp,
 }
 
 #[derive(Parser, Debug)]
@@ -63,6 +70,10 @@ struct Args {
     /// Request timeout in milliseconds
     #[arg(long, default_value = "5000")]
     timeout: u64,
+
+    /// UDP packet size in bytes (only for udp mode, min 16)
+    #[arg(long, default_value = "64")]
+    packet_size: usize,
 }
 
 /// Parse duration string like "10s", "1m", "500ms"
@@ -109,8 +120,8 @@ async fn main() {
     let duration = parse_duration(&args.duration).expect("Invalid duration format");
     let timeout = Duration::from_millis(args.timeout);
 
-    // Warn if HTTP/2 requested with raw mode
-    if args.http2 && matches!(args.mode, ClientMode::Raw) {
+    // Warn if HTTP/2 requested with incompatible mode
+    if args.http2 && !matches!(args.mode, ClientMode::Hyper) {
         eprintln!("Warning: --http2 is only supported with --mode hyper, ignoring");
     }
 
@@ -127,6 +138,7 @@ async fn main() {
                 "hyper (HTTP/1.1)"
             }
         }
+        ClientMode::Udp => "udp",
     };
 
     let stats = Arc::new(BenchStats::new());
@@ -150,6 +162,19 @@ async fn main() {
                 duration,
                 timeout,
                 args.http2,
+                stats.clone(),
+            )
+            .await;
+        }
+        ClientMode::Udp => {
+            // For UDP mode, url is used as "host:port" target address
+            let target = args.url.strip_prefix("udp://").unwrap_or(&args.url);
+            udp_client::run_benchmark(
+                target,
+                args.connections,
+                duration,
+                timeout,
+                args.packet_size,
                 stats.clone(),
             )
             .await;

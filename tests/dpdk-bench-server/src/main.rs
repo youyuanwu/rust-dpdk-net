@@ -1,18 +1,23 @@
-//! HTTP Benchmark Server - DPDK, Tokio, or Kimojio
+//! Benchmark Server - DPDK, Tokio, or Kimojio
 //!
-//! A high-performance HTTP server for benchmarking, supporting DPDK, Tokio, and Kimojio backends.
+//! A high-performance server for benchmarking, supporting DPDK, Tokio, and Kimojio backends.
 //!
-//! Supports four modes:
+//! Supports six modes:
 //! - **dpdk**: Multi-queue DPDK + smoltcp + hyper (requires root, hardware NIC)
 //! - **tokio**: Standard tokio + hyper with multi-threaded runtime (works anywhere)
 //! - **tokio-local**: Thread-per-core tokio + hyper with CPU pinning (works anywhere)
 //! - **kimojio**: Thread-per-core io_uring + custom HTTP parser (Linux 5.15+)
+//! - **kimojio-poll**: Same as kimojio with busy polling (Linux 5.15+)
+//! - **udp-echo**: Multi-queue DPDK UDP echo server (requires root, hardware NIC)
 //!
 //! # Usage
 //!
 //! ```bash
-//! # DPDK mode (requires sudo)
+//! # DPDK HTTP mode (requires sudo)
 //! sudo -E dpdk-bench-server --mode dpdk
+//!
+//! # DPDK UDP echo mode (requires sudo)
+//! sudo -E dpdk-bench-server --mode udp-echo
 //!
 //! # Tokio mode (no sudo needed)
 //! dpdk-bench-server --mode tokio
@@ -32,6 +37,7 @@
 //! ```bash
 //! curl http://localhost:8080/
 //! dpdk-bench-client -c 10 -d 10s http://localhost:8080/
+//! dpdk-bench-client --mode udp -c 10 -d 10s 10.0.0.4:8080
 //! ```
 
 use std::net::SocketAddr;
@@ -60,6 +66,8 @@ enum ServerMode {
     Kimojio,
     /// Thread-per-core kimojio + io_uring with busy polling (Linux 5.15+)
     KimojioPoll,
+    /// DPDK UDP echo server (requires root and hardware NIC)
+    UdpEcho,
 }
 
 #[derive(Parser, Debug)]
@@ -257,6 +265,91 @@ fn run_dpdk_server(
         });
 }
 
+/// Run the DPDK-based UDP echo server
+fn run_udp_echo_server(
+    interface: &str,
+    port: u16,
+    max_queues: Option<usize>,
+    ip_addr: Option<&str>,
+    gateway: Option<&str>,
+    hw_queues: Option<usize>,
+) {
+    use dpdk_net::api::rte::eal::EalBuilder;
+    use dpdk_net::socket::UdpSocket;
+    use dpdk_net_test::manual::tcp::{get_default_gateway, get_interface_ipv4, get_pci_addr};
+    use dpdk_net_util::{DpdkApp, WorkerContext};
+    use smoltcp::wire::Ipv4Address;
+    use tracing::warn;
+
+    let ip = if let Some(ip_str) = ip_addr {
+        Ipv4Address::from_str(ip_str).expect("Invalid IP address")
+    } else {
+        get_interface_ipv4(interface).expect("Failed to get IP address for interface")
+    };
+    let gw = if let Some(gw_str) = gateway {
+        Ipv4Address::from_str(gw_str).expect("Invalid gateway")
+    } else {
+        get_default_gateway().unwrap_or(Ipv4Address::new(10, 0, 0, 1))
+    };
+
+    let num_queues = if let Some(queues) = hw_queues {
+        queues
+    } else {
+        dpdk_net_test::util::get_ethtool_channels(interface)
+            .map(|ch| ch.combined_count as usize)
+            .expect("Failed to get hardware queues via ethtool")
+    };
+    let num_queues = if let Some(max) = max_queues {
+        num_queues.min(max)
+    } else {
+        num_queues
+    };
+    let core_list = format!("0-{}", num_queues.saturating_sub(1));
+
+    let pci_addr = get_pci_addr(interface).expect("Failed to get PCI address");
+    let _eal = EalBuilder::new()
+        .allow(&pci_addr)
+        .core_list(&core_list)
+        .init()
+        .expect("Failed to initialize EAL");
+
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let cancel_clone = cancel.clone();
+    ctrlc::set_handler(move || {
+        warn!("Received Ctrl+C, shutting down");
+        cancel_clone.cancel();
+    })
+    .expect("Failed to set Ctrl+C handler");
+
+    info!(port, queues = num_queues, "Starting UDP echo server");
+
+    DpdkApp::new()
+        .eth_dev(0)
+        .ip(ip)
+        .gateway(gw)
+        .run(move |ctx: WorkerContext| {
+            let cancel = cancel.clone();
+            async move {
+                let socket = UdpSocket::bind_default(&ctx.reactor, port)
+                    .expect("Failed to bind UDP socket");
+                info!(queue = ctx.queue_id, port, "UDP echo server listening");
+
+                let mut buf = vec![0u8; 65535];
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        result = socket.recv_from(&mut buf) => {
+                            if let Ok((n, meta)) = result {
+                                let _ = socket.send_to(&buf[..n], meta.endpoint).await;
+                                REQUEST_COUNT.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+}
+
 fn main() {
     // Initialize tracing - respects RUST_LOG, defaults to info if not set
     // Disable ANSI colors for clean log output
@@ -323,6 +416,26 @@ fn main() {
                 "Starting HTTP benchmark server with busy polling"
             );
             run_kimojio_thread_per_core_server(args.port, counter_handler_kimojio, true);
+        }
+        ServerMode::UdpEcho => {
+            info!(
+                mode = "udp-echo",
+                interface = %args.interface,
+                port = args.port,
+                ip_addr = ?args.ip_addr,
+                gateway = ?args.gateway,
+                hw_queues = ?args.hw_queues,
+                max_queues = args.max_queues,
+                "Starting UDP echo server"
+            );
+            run_udp_echo_server(
+                &args.interface,
+                args.port,
+                args.max_queues,
+                args.ip_addr.as_deref(),
+                args.gateway.as_deref(),
+                args.hw_queues,
+            );
         }
     }
 }

@@ -7,6 +7,8 @@ pub enum Error {
     Connect(smoltcp::socket::tcp::ConnectError),
     /// The TCP connection was refused or timed out.
     ConnectionFailed,
+    /// The connection attempt exceeded the configured timeout.
+    ConnectTimeout,
     /// HTTP handshake failed.
     Handshake(hyper::Error),
     /// Sending a request failed.
@@ -22,6 +24,7 @@ impl fmt::Display for Error {
         match self {
             Error::Connect(e) => write!(f, "TCP connect error: {e}"),
             Error::ConnectionFailed => write!(f, "TCP connection failed"),
+            Error::ConnectTimeout => write!(f, "TCP connection timed out"),
             Error::Handshake(e) => write!(f, "HTTP handshake error: {e}"),
             Error::Request(e) => write!(f, "HTTP request error: {e}"),
             Error::MissingHost => write!(f, "missing host in request URI"),
@@ -35,7 +38,7 @@ impl std::error::Error for Error {
         match self {
             Error::Connect(e) => Some(e),
             Error::Handshake(e) | Error::Request(e) => Some(e),
-            _ => None,
+            Error::ConnectionFailed | Error::ConnectTimeout | Error::MissingHost | Error::ConnectionNotReady => None,
         }
     }
 }

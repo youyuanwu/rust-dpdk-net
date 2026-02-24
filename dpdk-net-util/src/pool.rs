@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use bytes::Bytes;
 use hyper::body::Incoming;
@@ -34,7 +34,7 @@ use crate::error::Error;
 pub struct ConnectionPool {
     reactor: ReactorHandle,
     config: ClientConfig,
-    connections: HashMap<(IpAddress, u16), Vec<Connection>>,
+    connections: HashMap<(IpAddress, u16), VecDeque<Connection>>,
     max_idle_per_host: usize,
 }
 
@@ -112,11 +112,11 @@ impl ConnectionPool {
 
         // Enforce limit by removing oldest idle connection.
         if conns.len() >= self.max_idle_per_host {
-            conns.remove(0);
+            conns.pop_front();
         }
 
-        conns.push(conn);
-        Ok(conns.last_mut().unwrap())
+        conns.push_back(conn);
+        Ok(conns.back_mut().unwrap())
     }
 
     /// Send a one-shot request, reusing a pooled connection if available.

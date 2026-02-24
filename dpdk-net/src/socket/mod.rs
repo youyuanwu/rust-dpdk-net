@@ -18,7 +18,7 @@ pub use tcp::{
     AcceptFuture, CloseFuture, TcpListener, TcpRecvFuture, TcpSendFuture, TcpStream,
     WaitConnectedFuture,
 };
-pub use udp::{UdpRecvFuture, UdpSendFuture, UdpSocket};
+pub use udp::{UdpRecvByteFuture, UdpRecvFuture, UdpSendFuture, UdpSocket};
 
 // Re-export smoltcp error types for convenience
 pub use smoltcp::socket::tcp::{ConnectError, ListenError};

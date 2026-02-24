@@ -14,7 +14,7 @@ smoltcp.workspace = true
 hyper = { workspace = true, features = ["client", "http1", "http2"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 http-body-util.workspace = true
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "time"] }
 tracing.workspace = true
 
 [dev-dependencies]

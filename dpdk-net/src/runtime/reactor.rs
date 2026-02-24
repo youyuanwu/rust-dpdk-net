@@ -196,38 +196,36 @@ impl Reactor<DpdkDevice> {
     pub async fn run_with<R: Runtime>(self, batch_size: usize, cancel: Rc<Cell<bool>>) {
         while !cancel.get() {
             let timestamp = Instant::now();
-            let mut packets_processed = 0;
 
-            // Process ingress in batches
-            loop {
-                let result = {
-                    let mut inner = self.inner.borrow_mut();
-                    inner.poll_ingress_single(timestamp)
-                };
+            // Hold a single borrow for the entire poll cycle (ingress + egress + cleanup).
+            // This is safe because we are on a single-threaded LocalSet — socket futures
+            // can only poll after we yield, so no borrow contention is possible.
+            {
+                let mut inner = self.inner.borrow_mut();
+                let mut packets_processed = 0;
 
-                match result {
-                    PollIngressSingleResult::None => break,
-                    _ => {
-                        packets_processed += 1;
-                        if packets_processed >= batch_size {
-                            // Hit batch limit - break to run egress before yielding
-                            // This prevents DoS: we must send ACKs/responses, not just receive
-                            break;
+                // Process ingress in batches
+                loop {
+                    match inner.poll_ingress_single(timestamp) {
+                        PollIngressSingleResult::None => break,
+                        _ => {
+                            packets_processed += 1;
+                            if packets_processed >= batch_size {
+                                // Hit batch limit - break to run egress before yielding
+                                // This prevents DoS: we must send ACKs/responses, not just receive
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            // Process egress (bounded work - just transmits queued packets)
-            {
-                let mut inner = self.inner.borrow_mut();
+                // Process egress (bounded work - just transmits queued packets)
                 inner.poll_egress(timestamp);
-            }
 
-            // Clean up orphaned closing sockets that have completed their handshake
-            {
-                let mut inner = self.inner.borrow_mut();
-                inner.cleanup_orphaned();
+                // Clean up orphaned closing sockets (skip if none pending)
+                if !inner.orphaned_closing.is_empty() {
+                    inner.cleanup_orphaned();
+                }
             }
 
             // Yield to let other async tasks run (accept handlers, recv futures, etc.)

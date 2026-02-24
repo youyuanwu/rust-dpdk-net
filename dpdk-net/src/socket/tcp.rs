@@ -189,6 +189,16 @@ pub struct TcpListener {
 }
 
 impl TcpListener {
+    /// Default receive buffer size (16KB).
+    pub const DEFAULT_RX_BUFFER: usize = 16384;
+    /// Default transmit buffer size (16KB).
+    pub const DEFAULT_TX_BUFFER: usize = 16384;
+
+    /// Creates a new TcpListener with default buffer sizes (16KB rx/tx) and backlog of 2.
+    pub fn bind_default(handle: &ReactorHandle, port: u16) -> Result<Self, ListenError> {
+        Self::bind(handle, port, Self::DEFAULT_RX_BUFFER, Self::DEFAULT_TX_BUFFER)
+    }
+
     /// Creates a new TcpListener bound to the specified port with default backlog of 2.
     ///
     /// Similar to `std::net::TcpListener::bind()`.
@@ -485,14 +495,14 @@ impl<'a> Future for WaitConnectedFuture<'a> {
             State::Established => Poll::Ready(Ok(())),
             // Connection failed
             State::Closed | State::TimeWait => Poll::Ready(Err(())),
-            // Still connecting - register waker and wait
+            // Still connecting - register waker and wait for inbound SYN-ACK
             State::SynSent | State::SynReceived => {
-                socket.register_send_waker(cx.waker());
+                socket.register_recv_waker(cx.waker());
                 Poll::Pending
             }
-            // Other states - keep waiting
+            // Other states - keep waiting for inbound state transition
             _ => {
-                socket.register_send_waker(cx.waker());
+                socket.register_recv_waker(cx.waker());
                 Poll::Pending
             }
         }
@@ -514,9 +524,9 @@ impl<'a> Future for CloseFuture<'a> {
         match socket.state() {
             // Fully closed - done!
             State::Closed | State::TimeWait => Poll::Ready(()),
-            // Still closing - register waker and wait
+            // Still closing - register waker and wait for inbound FIN-ACK
             _ => {
-                socket.register_send_waker(cx.waker());
+                socket.register_recv_waker(cx.waker());
                 Poll::Pending
             }
         }

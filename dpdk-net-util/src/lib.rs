@@ -39,7 +39,7 @@ pub mod error;
 pub mod executor;
 pub mod pool;
 
-pub use app::DpdkApp;
+pub use app::{DpdkApp, DpdkAppError};
 pub use client::{ClientConfig, DpdkHttpClient};
 pub use connect::{http1_connect, http2_connect};
 pub use connection::{Connection, HttpVersion, ResponseFuture};

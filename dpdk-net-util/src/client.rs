@@ -18,7 +18,7 @@ pub struct ClientConfig {
     pub tx_buffer_size: usize,
     /// HTTP version preference.
     pub http_version: HttpVersion,
-    /// Connection timeout (not yet enforced — reserved for future use).
+    /// Connection timeout. Applied to TCP connect + HTTP handshake.
     pub connect_timeout: Duration,
 }
 
@@ -83,13 +83,17 @@ impl DpdkHttpClient {
     ///
     /// `local_port` is the ephemeral source port for the TCP connection.
     /// The HTTP version is determined by [`ClientConfig::http_version`].
+    ///
+    /// The connection attempt (TCP handshake + HTTP handshake) is bounded by
+    /// [`ClientConfig::connect_timeout`]. Returns [`Error::ConnectTimeout`] if
+    /// the timeout expires.
     pub async fn connect(
         &self,
         addr: IpAddress,
         port: u16,
         local_port: u16,
     ) -> Result<Connection, Error> {
-        match self.config.http_version {
+        let fut = match self.config.http_version {
             HttpVersion::Http1 => {
                 Connection::http1(
                     &self.reactor,
@@ -99,7 +103,6 @@ impl DpdkHttpClient {
                     self.config.rx_buffer_size,
                     self.config.tx_buffer_size,
                 )
-                .await
             }
             HttpVersion::Http2 => {
                 Connection::http2(
@@ -110,9 +113,12 @@ impl DpdkHttpClient {
                     self.config.rx_buffer_size,
                     self.config.tx_buffer_size,
                 )
-                .await
             }
-        }
+        };
+
+        tokio::time::timeout(self.config.connect_timeout, fut)
+            .await
+            .map_err(|_| Error::ConnectTimeout)?
     }
 
     /// Send a one-shot HTTP request, creating a new connection.
