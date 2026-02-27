@@ -177,46 +177,6 @@ pub const RTE_RING_SYNC_MT_RTS: u32 = 2u32;
 pub const RTE_RING_SYNC_ST: u32 = 1u32;
 pub const _IO_EOF_SEEN: i32 = 16i32;
 pub const _IO_ERR_SEEN: i32 = 32i32;
-#[repr(C, packed(8))]
-#[cfg(all(feature = "ethdev", feature = "lcore"))]
-#[derive(Clone, Copy)]
-pub struct _IO_FILE {
-    pub _flags: i32,
-    pub _IO_read_ptr: *mut i8,
-    pub _IO_read_end: *mut i8,
-    pub _IO_read_base: *mut i8,
-    pub _IO_write_base: *mut i8,
-    pub _IO_write_ptr: *mut i8,
-    pub _IO_write_end: *mut i8,
-    pub _IO_buf_base: *mut i8,
-    pub _IO_buf_end: *mut i8,
-    pub _IO_save_base: *mut i8,
-    pub _IO_backup_base: *mut i8,
-    pub _IO_save_end: *mut i8,
-    pub _markers: *mut core::ffi::c_void,
-    pub _chain: *mut super::ethdev::_IO_FILE,
-    pub _fileno: i32,
-    pub _flags2: i32,
-    pub _old_offset: i64,
-    pub _cur_column: u16,
-    pub _vtable_offset: i8,
-    pub _shortbuf: [i8; 1],
-    pub _lock: *mut super::lcore::_IO_lock_t,
-    pub _offset: i64,
-    pub _codecvt: *mut core::ffi::c_void,
-    pub _wide_data: *mut core::ffi::c_void,
-    pub _freeres_list: *mut super::ethdev::_IO_FILE,
-    pub _freeres_buf: *mut core::ffi::c_void,
-    pub __pad5: u64,
-    pub _mode: i32,
-    pub _unused2: [i8; 20],
-}
-#[cfg(all(feature = "ethdev", feature = "lcore"))]
-impl Default for _IO_FILE {
-    fn default() -> Self {
-        unsafe { core::mem::zeroed() }
-    }
-}
 pub const _IO_USER_LOCK: i32 = 32768i32;
 #[repr(C, packed(8))]
 #[derive(Clone, Copy)]
@@ -257,6 +217,7 @@ pub const __struct_FILE_defined: i32 = 1i32;
 #[derive(Clone, Copy)]
 pub struct rte_mempool {
     pub name: [i8; 26],
+    pub rte_mempool__anon_0: rte_mempool__anon_0,
     pub pool_config: *mut core::ffi::c_void,
     pub mz: *mut rte_memzone,
     pub flags: u32,
@@ -273,8 +234,20 @@ pub struct rte_mempool {
     pub elt_list: rte_mempool_objhdr_list,
     pub nb_mem_chunks: u32,
     pub mem_list: rte_mempool_memhdr_list,
+    pub _padding: [u8; 40],
 }
 impl Default for rte_mempool {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(8))]
+#[derive(Clone, Copy)]
+pub union rte_mempool__anon_0 {
+    pub pool_data: *mut core::ffi::c_void,
+    pub pool_id: u64,
+}
+impl Default for rte_mempool__anon_0 {
     fn default() -> Self {
         unsafe { core::mem::zeroed() }
     }
@@ -340,9 +313,15 @@ pub type rte_mempool_get_info_t = Option<
     unsafe extern "system" fn(param0: *const rte_mempool, param1: *const rte_mempool_info) -> i32,
 >;
 #[repr(C, packed(64))]
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct rte_mempool_info {
     pub contig_block_size: u32,
+    pub _padding: [u8; 60],
+}
+impl Default for rte_mempool_info {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
 }
 pub type rte_mempool_mem_cb_t = Option<
     unsafe extern "system" fn(
@@ -467,6 +446,7 @@ pub struct rte_mempool_ops {
     pub populate: rte_mempool_populate_t,
     pub get_info: rte_mempool_get_info_t,
     pub dequeue_contig_blocks: rte_mempool_dequeue_contig_blocks_t,
+    pub _padding: [u8; 24],
 }
 impl Default for rte_mempool_ops {
     fn default() -> Self {
@@ -509,12 +489,24 @@ pub type rte_mempool_populate_t = Option<
 pub struct rte_memzone {
     pub name: [i8; 32],
     pub iova: u64,
+    pub rte_memzone__anon_0: rte_memzone__anon_0,
     pub len: u64,
     pub hugepage_sz: u64,
     pub socket_id: i32,
     pub flags: u32,
 }
 impl Default for rte_memzone {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(8))]
+#[derive(Clone, Copy)]
+pub union rte_memzone__anon_0 {
+    pub addr: *mut core::ffi::c_void,
+    pub addr_64: u64,
+}
+impl Default for rte_memzone__anon_0 {
     fn default() -> Self {
         unsafe { core::mem::zeroed() }
     }
@@ -529,7 +521,9 @@ pub struct rte_ring {
     pub mask: u32,
     pub capacity: u32,
     pub cache_guard_0: [i8; 64],
+    pub rte_ring__anon_0: rte_ring__anon_0,
     pub cache_guard_1: [i8; 64],
+    pub rte_ring__anon_1: rte_ring__anon_1,
     pub cache_guard_2: [i8; 64],
 }
 impl Default for rte_ring {
@@ -537,11 +531,53 @@ impl Default for rte_ring {
         unsafe { core::mem::zeroed() }
     }
 }
+#[repr(C, packed(64))]
+#[derive(Clone, Copy)]
+pub union rte_ring__anon_0 {
+    pub prod: rte_ring_headtail,
+    pub hts_prod: rte_ring_hts_headtail,
+    pub rts_prod: rte_ring_rts_headtail,
+}
+impl Default for rte_ring__anon_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(64))]
+#[derive(Clone, Copy)]
+pub union rte_ring__anon_1 {
+    pub cons: rte_ring_headtail,
+    pub hts_cons: rte_ring_hts_headtail,
+    pub rts_cons: rte_ring_rts_headtail,
+}
+impl Default for rte_ring__anon_1 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
 #[repr(C, packed(4))]
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct rte_ring_headtail {
     pub head: u32,
     pub tail: u32,
+    pub rte_ring_headtail__anon_0: rte_ring_headtail__anon_0,
+    pub _padding: [u8; 4],
+}
+impl Default for rte_ring_headtail {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy)]
+pub union rte_ring_headtail__anon_0 {
+    pub sync_type: rte_ring_sync_type,
+    pub single: u32,
+}
+impl Default for rte_ring_headtail__anon_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
 }
 #[repr(C, packed(8))]
 #[derive(Clone, Copy)]

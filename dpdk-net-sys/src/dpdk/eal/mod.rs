@@ -61,6 +61,7 @@ pub struct rte_mp_msg {
     pub num_fds: i32,
     pub param: [u8; 256],
     pub fds: [i32; 253],
+    pub _padding: [u8; 4],
 }
 impl Default for rte_mp_msg {
     fn default() -> Self {

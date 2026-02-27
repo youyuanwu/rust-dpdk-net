@@ -186,46 +186,6 @@ pub const RTE_MBUF_TXOFLD_UNUSED_BITS: u32 = 8u32;
 pub const RTE_MBUF_TXOFLD_UNUSED_OFS: u32 = 56u32;
 pub const _IO_EOF_SEEN: i32 = 16i32;
 pub const _IO_ERR_SEEN: i32 = 32i32;
-#[repr(C, packed(8))]
-#[cfg(all(feature = "ethdev", feature = "lcore"))]
-#[derive(Clone, Copy)]
-pub struct _IO_FILE {
-    pub _flags: i32,
-    pub _IO_read_ptr: *mut i8,
-    pub _IO_read_end: *mut i8,
-    pub _IO_read_base: *mut i8,
-    pub _IO_write_base: *mut i8,
-    pub _IO_write_ptr: *mut i8,
-    pub _IO_write_end: *mut i8,
-    pub _IO_buf_base: *mut i8,
-    pub _IO_buf_end: *mut i8,
-    pub _IO_save_base: *mut i8,
-    pub _IO_backup_base: *mut i8,
-    pub _IO_save_end: *mut i8,
-    pub _markers: *mut core::ffi::c_void,
-    pub _chain: *mut super::ethdev::_IO_FILE,
-    pub _fileno: i32,
-    pub _flags2: i32,
-    pub _old_offset: i64,
-    pub _cur_column: u16,
-    pub _vtable_offset: i8,
-    pub _shortbuf: [i8; 1],
-    pub _lock: *mut super::lcore::_IO_lock_t,
-    pub _offset: i64,
-    pub _codecvt: *mut core::ffi::c_void,
-    pub _wide_data: *mut core::ffi::c_void,
-    pub _freeres_list: *mut super::ethdev::_IO_FILE,
-    pub _freeres_buf: *mut core::ffi::c_void,
-    pub __pad5: u64,
-    pub _mode: i32,
-    pub _unused2: [i8; 20],
-}
-#[cfg(all(feature = "ethdev", feature = "lcore"))]
-impl Default for _IO_FILE {
-    fn default() -> Self {
-        unsafe { core::mem::zeroed() }
-    }
-}
 pub const _IO_USER_LOCK: i32 = 32768i32;
 pub const __struct_FILE_defined: i32 = 1i32;
 #[repr(C, packed(64))]
@@ -234,9 +194,12 @@ pub const __struct_FILE_defined: i32 = 1i32;
 pub struct rte_mbuf {
     pub buf_addr: *mut core::ffi::c_void,
     pub buf_iova: u64,
+    pub rte_mbuf__anon_0: rte_mbuf__anon_0,
     pub ol_flags: u64,
+    pub rte_mbuf__anon_1: rte_mbuf__anon_1,
     pub pool: *mut super::mempool::rte_mempool,
     pub next: *mut rte_mbuf,
+    pub rte_mbuf__anon_2: rte_mbuf__anon_2,
     pub shinfo: *mut rte_mbuf_ext_shared_info,
     pub priv_size: u16,
     pub timesync: u16,
@@ -247,6 +210,170 @@ impl Default for rte_mbuf {
     fn default() -> Self {
         unsafe { core::mem::zeroed() }
     }
+}
+#[repr(C, packed(8))]
+#[derive(Clone, Copy)]
+pub union rte_mbuf__anon_0 {
+    pub rearm_data: [u64; 1],
+    pub rte_mbuf__anon_0__anon_0: rte_mbuf__anon_0__anon_0,
+}
+impl Default for rte_mbuf__anon_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(2))]
+#[derive(Clone, Copy, Default)]
+pub struct rte_mbuf__anon_0__anon_0 {
+    pub data_off: u16,
+    pub refcnt: u16,
+    pub nb_segs: u16,
+    pub port: u16,
+}
+#[repr(C, packed(8))]
+#[derive(Clone, Copy)]
+pub union rte_mbuf__anon_1 {
+    pub rx_descriptor_fields1: [*mut core::ffi::c_void; 3],
+    pub rte_mbuf__anon_1__anon_0: rte_mbuf__anon_1__anon_0,
+}
+impl Default for rte_mbuf__anon_1 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy)]
+pub struct rte_mbuf__anon_1__anon_0 {
+    pub rte_mbuf__anon_1__anon_0__anon_0: rte_mbuf__anon_1__anon_0__anon_0,
+    pub pkt_len: u32,
+    pub data_len: u16,
+    pub vlan_tci: u16,
+    pub rte_mbuf__anon_1__anon_0__anon_1: rte_mbuf__anon_1__anon_0__anon_1,
+    pub vlan_tci_outer: u16,
+    pub buf_len: u16,
+}
+impl Default for rte_mbuf__anon_1__anon_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy)]
+pub union rte_mbuf__anon_1__anon_0__anon_0 {
+    pub packet_type: u32,
+    pub rte_mbuf__anon_1__anon_0__anon_0__anon_0: rte_mbuf__anon_1__anon_0__anon_0__anon_0,
+}
+impl Default for rte_mbuf__anon_1__anon_0__anon_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(1))]
+#[derive(Clone, Copy)]
+pub struct rte_mbuf__anon_1__anon_0__anon_0__anon_0 {
+    pub _bitfield_0: u16,
+    pub rte_mbuf__anon_1__anon_0__anon_0__anon_0__anon_0:
+        rte_mbuf__anon_1__anon_0__anon_0__anon_0__anon_0,
+    pub inner_l4_type: u8,
+}
+impl Default for rte_mbuf__anon_1__anon_0__anon_0__anon_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(1))]
+#[derive(Clone, Copy)]
+pub union rte_mbuf__anon_1__anon_0__anon_0__anon_0__anon_0 {
+    pub inner_esp_next_proto: u8,
+    pub rte_mbuf__anon_1__anon_0__anon_0__anon_0__anon_0__anon_0:
+        rte_mbuf__anon_1__anon_0__anon_0__anon_0__anon_0__anon_0,
+}
+impl Default for rte_mbuf__anon_1__anon_0__anon_0__anon_0__anon_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(1))]
+#[derive(Clone, Copy, Default)]
+pub struct rte_mbuf__anon_1__anon_0__anon_0__anon_0__anon_0__anon_0 {
+    pub _bitfield_0: u8,
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy)]
+pub union rte_mbuf__anon_1__anon_0__anon_1 {
+    pub hash: rte_mbuf__anon_1__anon_0__anon_1_hash,
+}
+impl Default for rte_mbuf__anon_1__anon_0__anon_1 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy)]
+pub union rte_mbuf__anon_1__anon_0__anon_1_hash {
+    pub rss: u32,
+    pub fdir: rte_mbuf__anon_1__anon_0__anon_1_hash_fdir,
+    pub sched: rte_mbuf_sched,
+    pub txadapter: rte_mbuf__anon_1__anon_0__anon_1_hash_txadapter,
+    pub usr: u32,
+}
+impl Default for rte_mbuf__anon_1__anon_0__anon_1_hash {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy)]
+pub struct rte_mbuf__anon_1__anon_0__anon_1_hash_fdir {
+    pub rte_mbuf__anon_1__anon_0__anon_1_hash_fdir__anon_0:
+        rte_mbuf__anon_1__anon_0__anon_1_hash_fdir__anon_0,
+    pub hi: u32,
+}
+impl Default for rte_mbuf__anon_1__anon_0__anon_1_hash_fdir {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy)]
+pub union rte_mbuf__anon_1__anon_0__anon_1_hash_fdir__anon_0 {
+    pub rte_mbuf__anon_1__anon_0__anon_1_hash_fdir__anon_0__anon_0:
+        rte_mbuf__anon_1__anon_0__anon_1_hash_fdir__anon_0__anon_0,
+    pub lo: u32,
+}
+impl Default for rte_mbuf__anon_1__anon_0__anon_1_hash_fdir__anon_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(2))]
+#[derive(Clone, Copy, Default)]
+pub struct rte_mbuf__anon_1__anon_0__anon_1_hash_fdir__anon_0__anon_0 {
+    pub hash: u16,
+    pub id: u16,
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy, Default)]
+pub struct rte_mbuf__anon_1__anon_0__anon_1_hash_txadapter {
+    pub reserved1: u32,
+    pub reserved2: u16,
+    pub txq: u16,
+}
+#[repr(C, packed(8))]
+#[derive(Clone, Copy)]
+pub union rte_mbuf__anon_2 {
+    pub tx_offload: u64,
+    pub rte_mbuf__anon_2__anon_0: rte_mbuf__anon_2__anon_0,
+}
+impl Default for rte_mbuf__anon_2 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(8))]
+#[derive(Clone, Copy, Default)]
+pub struct rte_mbuf__anon_2__anon_0 {
+    pub _bitfield_0: u64,
 }
 #[repr(C, packed(8))]
 #[derive(Clone, Copy)]

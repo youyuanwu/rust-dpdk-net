@@ -35,46 +35,6 @@ pub const ROLE_RTE: u32 = 0u32;
 pub const ROLE_SERVICE: u32 = 2u32;
 pub const _IO_EOF_SEEN: i32 = 16i32;
 pub const _IO_ERR_SEEN: i32 = 32i32;
-#[repr(C, packed(8))]
-#[cfg(feature = "ethdev")]
-#[derive(Clone, Copy)]
-pub struct _IO_FILE {
-    pub _flags: i32,
-    pub _IO_read_ptr: *mut i8,
-    pub _IO_read_end: *mut i8,
-    pub _IO_read_base: *mut i8,
-    pub _IO_write_base: *mut i8,
-    pub _IO_write_ptr: *mut i8,
-    pub _IO_write_end: *mut i8,
-    pub _IO_buf_base: *mut i8,
-    pub _IO_buf_end: *mut i8,
-    pub _IO_save_base: *mut i8,
-    pub _IO_backup_base: *mut i8,
-    pub _IO_save_end: *mut i8,
-    pub _markers: *mut core::ffi::c_void,
-    pub _chain: *mut super::ethdev::_IO_FILE,
-    pub _fileno: i32,
-    pub _flags2: i32,
-    pub _old_offset: i64,
-    pub _cur_column: u16,
-    pub _vtable_offset: i8,
-    pub _shortbuf: [i8; 1],
-    pub _lock: *mut _IO_lock_t,
-    pub _offset: i64,
-    pub _codecvt: *mut core::ffi::c_void,
-    pub _wide_data: *mut core::ffi::c_void,
-    pub _freeres_list: *mut super::ethdev::_IO_FILE,
-    pub _freeres_buf: *mut core::ffi::c_void,
-    pub __pad5: u64,
-    pub _mode: i32,
-    pub _unused2: [i8; 20],
-}
-#[cfg(feature = "ethdev")]
-impl Default for _IO_FILE {
-    fn default() -> Self {
-        unsafe { core::mem::zeroed() }
-    }
-}
 pub const _IO_USER_LOCK: i32 = 32768i32;
 pub type _IO_lock_t = isize;
 pub const __struct_FILE_defined: i32 = 1i32;

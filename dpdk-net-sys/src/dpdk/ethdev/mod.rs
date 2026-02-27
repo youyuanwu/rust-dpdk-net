@@ -715,6 +715,7 @@ pub struct rte_devargs {
     pub r#type: rte_devtype,
     pub policy: rte_dev_policy,
     pub name: [i8; 64],
+    pub rte_devargs__anon_0: rte_devargs__anon_0,
     pub bus: *mut core::ffi::c_void,
     pub cls: *mut core::ffi::c_void,
     pub bus_str: *mut i8,
@@ -722,6 +723,17 @@ pub struct rte_devargs {
     pub data: *mut i8,
 }
 impl Default for rte_devargs {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(8))]
+#[derive(Clone, Copy)]
+pub union rte_devargs__anon_0 {
+    pub args: *mut i8,
+    pub drv_str: *mut i8,
+}
+impl Default for rte_devargs__anon_0 {
     fn default() -> Self {
         unsafe { core::mem::zeroed() }
     }
@@ -1097,13 +1109,7 @@ pub struct rte_eth_hairpin_cap {
 #[repr(C, packed(4))]
 #[derive(Clone, Copy)]
 pub struct rte_eth_hairpin_conf {
-    pub peer_count: u32,
-    pub tx_explicit: u32,
-    pub manual_bind: u32,
-    pub use_locked_device_memory: u32,
-    pub use_rte_memory: u32,
-    pub force_memory: u32,
-    pub reserved: u32,
+    pub _bitfield_0: u32,
     pub peers: [rte_eth_hairpin_peer; 32],
 }
 impl Default for rte_eth_hairpin_conf {
@@ -1120,17 +1126,13 @@ pub struct rte_eth_hairpin_peer {
 #[repr(C, packed(4))]
 #[derive(Clone, Copy, Default)]
 pub struct rte_eth_hairpin_queue_cap {
-    pub locked_device_memory: u32,
-    pub rte_memory: u32,
-    pub reserved: u32,
+    pub _bitfield_0: u32,
 }
 pub type rte_eth_hash_function = u32;
 #[repr(C, packed(4))]
 #[derive(Clone, Copy, Default)]
 pub struct rte_eth_intr_conf {
-    pub lsc: u32,
-    pub rxq: u32,
-    pub rmv: u32,
+    pub _bitfield_0: u8,
 }
 #[repr(C, packed(8))]
 #[cfg(all(feature = "mbuf", feature = "mempool"))]
@@ -1154,8 +1156,32 @@ pub struct rte_eth_ip_reassembly_params {
     pub flags: u16,
 }
 #[repr(C, packed(8))]
+#[derive(Clone, Copy)]
+pub struct rte_eth_link {
+    pub rte_eth_link__anon_0: rte_eth_link__anon_0,
+}
+impl Default for rte_eth_link {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(8))]
+#[derive(Clone, Copy)]
+pub union rte_eth_link__anon_0 {
+    pub val64: u64,
+    pub rte_eth_link__anon_0__anon_0: rte_eth_link__anon_0__anon_0,
+}
+impl Default for rte_eth_link__anon_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(4))]
 #[derive(Clone, Copy, Default)]
-pub struct rte_eth_link(pub u8);
+pub struct rte_eth_link__anon_0__anon_0 {
+    pub link_speed: u32,
+    pub _bitfield_0: u16,
+}
 pub type rte_eth_link_connector = u32;
 pub type rte_eth_nb_pools = u32;
 pub type rte_eth_nb_tcs = u32;
@@ -1201,6 +1227,7 @@ pub struct rte_eth_recycle_rxq_info {
     pub receive_tail: *mut u16,
     pub mbuf_ring_size: u16,
     pub refill_requirement: u16,
+    pub _padding: [u8; 28],
 }
 #[cfg(all(feature = "mbuf", feature = "mempool"))]
 impl Default for rte_eth_recycle_rxq_info {
@@ -1238,11 +1265,23 @@ pub struct rte_eth_representor_range {
     pub r#type: rte_eth_representor_type,
     pub controller: i32,
     pub pf: i32,
+    pub rte_eth_representor_range__anon_0: rte_eth_representor_range__anon_0,
     pub id_base: u32,
     pub id_end: u32,
     pub name: [i8; 64],
 }
 impl Default for rte_eth_representor_range {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C, packed(4))]
+#[derive(Clone, Copy)]
+pub union rte_eth_representor_range__anon_0 {
+    pub vf: i32,
+    pub sf: i32,
+}
+impl Default for rte_eth_representor_range__anon_0 {
     fn default() -> Self {
         unsafe { core::mem::zeroed() }
     }
@@ -1323,6 +1362,7 @@ pub struct rte_eth_rxq_info {
     pub nb_desc: u16,
     pub rx_buf_size: u16,
     pub avail_thresh: u8,
+    pub _padding: [u8; 33],
 }
 #[cfg(feature = "mempool")]
 impl Default for rte_eth_rxq_info {
@@ -1345,9 +1385,7 @@ impl Default for rte_eth_rxseg {
 #[repr(C, packed(4))]
 #[derive(Clone, Copy, Default)]
 pub struct rte_eth_rxseg_capa {
-    pub multi_pools: u32,
-    pub offset_allowed: u32,
-    pub offset_align_log2: u32,
+    pub _bitfield_0: u8,
     pub max_nseg: u16,
     pub reserved: u16,
 }
@@ -1428,9 +1466,7 @@ pub struct rte_eth_txmode {
     pub mq_mode: rte_eth_tx_mq_mode,
     pub offloads: u64,
     pub pvid: u16,
-    pub hw_vlan_reject_tagged: u8,
-    pub hw_vlan_reject_untagged: u8,
-    pub hw_vlan_insert_pvid: u8,
+    pub _bitfield_0: u8,
     pub reserved_64s: [u64; 2],
     pub reserved_ptrs: [*mut core::ffi::c_void; 2],
 }
