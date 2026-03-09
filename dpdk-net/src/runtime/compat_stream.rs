@@ -1,9 +1,8 @@
-//! Tokio compatibility wrappers for async TCP sockets.
+//! Async I/O wrappers for TCP sockets.
 //!
-//! This module provides:
-//! - [`TokioRuntime`]: Implementation of the [`Runtime`](super::Runtime) trait for tokio
-//! - [`TokioTcpStream`]: A wrapper around [`TcpStream`](crate::socket::TcpStream) that implements
-//!   [`futures_io::AsyncRead`] and [`futures_io::AsyncWrite`] traits
+//! This module provides [`AsyncTcpStream`]: a wrapper around
+//! [`TcpStream`](crate::socket::TcpStream) that implements
+//! [`futures_io::AsyncRead`] and [`futures_io::AsyncWrite`] traits.
 //!
 //! # Example
 //!
@@ -18,26 +17,12 @@
 //! }
 //! ```
 
-use super::Runtime;
 use crate::socket::TcpStream;
 use futures_io::{AsyncRead, AsyncWrite};
 use smoltcp::socket::tcp::{self, RecvError, State};
-use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-
-/// Tokio runtime implementation.
-///
-/// This is the default runtime for use with tokio's single-threaded executor.
-/// Use with [`Reactor::run`](super::Reactor::run) or [`Reactor::run_with`](super::Reactor::run_with).
-pub struct TokioRuntime;
-
-impl Runtime for TokioRuntime {
-    fn yield_now() -> impl Future<Output = ()> {
-        tokio::task::yield_now()
-    }
-}
 
 /// A wrapper around [`TcpStream`] that implements [`futures_io::AsyncRead`] and [`futures_io::AsyncWrite`].
 ///

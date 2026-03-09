@@ -1,8 +1,8 @@
 //! Async reactor and runtime support for DPDK + smoltcp networking.
 //!
 //! This module provides the reactor pattern implementation that continuously polls
-//! DPDK for packets and processes them through smoltcp. It is runtime-agnostic
-//! via the [`Runtime`] trait, with a [`TokioRuntime`] implementation provided.
+//! DPDK for packets and processes them through smoltcp. The reactor is runtime-agnostic
+//! and works with any async executor (tokio, async-std, smol, etc.).
 //!
 //! # Architecture
 //!
@@ -17,13 +17,13 @@
 //! 1. **Reactor polls DPDK + smoltcp** continuously in a background task
 //! 2. **Socket futures register wakers** with smoltcp when they would block
 //! 3. **smoltcp wakes those wakers** when socket state changes during poll
-//! 4. **Tokio schedules those tasks** to run
+//! 4. **The executor schedules those tasks** to run
 //!
 //! # Example
 //!
-//! ```no_run
+//! ```ignore
 //! use dpdk_net::device::DpdkDevice;
-//! use dpdk_net::runtime::{Reactor, TokioRuntime};
+//! use dpdk_net::runtime::Reactor;
 //! use dpdk_net::socket::TcpListener;
 //! use smoltcp::iface::Interface;
 //! use std::cell::Cell;
@@ -48,12 +48,8 @@
 //! }
 //! ```
 
-#[cfg(feature = "tokio")]
 pub mod compat_stream;
 mod reactor;
-mod traits;
 
-#[cfg(feature = "tokio")]
-pub use compat_stream::{AsyncTcpStream, TokioRuntime};
+pub use compat_stream::AsyncTcpStream;
 pub use reactor::{Reactor, ReactorHandle, ReactorInner};
-pub use traits::Runtime;

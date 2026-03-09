@@ -448,7 +448,6 @@ dependencies = [
  "futures-io",
  "nix",
  "smoltcp",
- "tokio",
  "tracing",
 ]
 

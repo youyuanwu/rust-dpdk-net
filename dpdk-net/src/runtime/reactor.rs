@@ -3,16 +3,41 @@
 //! The reactor drives the network stack by continuously polling DPDK for packets
 //! and processing them through smoltcp.
 
-use super::Runtime;
-#[cfg(feature = "tokio")]
-use super::TokioRuntime;
 use crate::device::DpdkDevice;
 
 use smoltcp::iface::{Interface, PollIngressSingleResult, SocketHandle, SocketSet};
 use smoltcp::phy::Device;
 use smoltcp::time::Instant;
 use std::cell::{Cell, RefCell};
+use std::future::Future;
+use std::pin::Pin;
 use std::rc::Rc;
+use std::task::{Context, Poll};
+
+/// Yield control back to the async runtime scheduler.
+///
+/// Returns `Pending` once (re-registering the waker) then `Ready(())`,
+/// giving other tasks a chance to run. This is runtime-agnostic and
+/// works with any async executor (tokio, async-std, smol, etc.).
+fn yield_now() -> impl Future<Output = ()> {
+    struct YieldNow(bool);
+
+    impl Future for YieldNow {
+        type Output = ();
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+            if self.0 {
+                Poll::Ready(())
+            } else {
+                self.0 = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        }
+    }
+
+    YieldNow(false)
+}
 
 /// Default number of packets to process before yielding to other tasks.
 /// This balances responsiveness with throughput.
@@ -107,10 +132,9 @@ impl Reactor<DpdkDevice> {
         }
     }
 
-    /// Run the reactor forever using tokio, polling DPDK continuously with bounded work.
+    /// Run the reactor forever, polling DPDK continuously with bounded work.
     ///
-    /// This is a convenience method equivalent to `run_with::<TokioRuntime>()`.
-    /// It should be spawned as a background task using `tokio::task::spawn_local`.
+    /// Should be spawned as a background task (e.g. `tokio::task::spawn_local`).
     ///
     /// To avoid DoS from packet floods, this uses `poll_ingress_single()` to process
     /// packets in batches, yielding between batches. This ensures that even under
@@ -121,7 +145,7 @@ impl Reactor<DpdkDevice> {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use dpdk_net::device::DpdkDevice;
     /// # use dpdk_net::runtime::Reactor;
     /// # use smoltcp::iface::Interface;
@@ -140,15 +164,12 @@ impl Reactor<DpdkDevice> {
     /// // Now use handle to create sockets...
     /// # }
     /// ```
-    #[cfg(feature = "tokio")]
     pub async fn run(self, cancel: Rc<Cell<bool>>) {
-        self.run_with::<TokioRuntime>(DEFAULT_INGRESS_BATCH_SIZE, cancel)
+        self.run_with_batch_size(DEFAULT_INGRESS_BATCH_SIZE, cancel)
             .await
     }
 
-    /// Run the reactor with tokio and a custom ingress batch size.
-    ///
-    /// This is a convenience method equivalent to `run_with::<TokioRuntime>(batch_size)`.
+    /// Run the reactor with a custom ingress batch size.
     ///
     /// `batch_size` controls how many packets are processed before yielding
     /// to other tasks. Higher values increase throughput but reduce responsiveness.
@@ -158,30 +179,12 @@ impl Reactor<DpdkDevice> {
     /// - 16-32: Good balance for mixed workloads
     /// - 64-128: High-throughput scenarios
     /// - 1-8: When latency for other tasks is critical
-    #[cfg(feature = "tokio")]
-    pub async fn run_with_batch_size(self, batch_size: usize, cancel: Rc<Cell<bool>>) {
-        self.run_with::<TokioRuntime>(batch_size, cancel).await
-    }
-
-    /// Run the reactor with a custom async runtime.
-    ///
-    /// This is the most flexible run method, allowing you to use any runtime
-    /// that implements the [`Runtime`] trait.
-    ///
-    /// # Type Parameters
-    ///
-    /// * `R` - The runtime implementation to use for yielding
-    ///
-    /// # Arguments
-    ///
-    /// * `batch_size` - Number of packets to process before yielding
-    /// * `cancel` - When set to `true`, the reactor loop will exit
     ///
     /// # Example
     ///
     /// ```no_run
     /// # use dpdk_net::device::DpdkDevice;
-    /// # use dpdk_net::runtime::{Reactor, TokioRuntime};
+    /// # use dpdk_net::runtime::Reactor;
     /// # use smoltcp::iface::Interface;
     /// # use std::cell::Cell;
     /// # use std::rc::Rc;
@@ -189,11 +192,11 @@ impl Reactor<DpdkDevice> {
     /// let reactor = Reactor::new(device, iface);
     /// let cancel = Rc::new(Cell::new(false));
     ///
-    /// // Run with explicit runtime, batch size, and cancel flag
-    /// reactor.run_with::<TokioRuntime>(64, cancel).await;
+    /// // Run with custom batch size
+    /// reactor.run_with_batch_size(64, cancel).await;
     /// # }
     /// ```
-    pub async fn run_with<R: Runtime>(self, batch_size: usize, cancel: Rc<Cell<bool>>) {
+    pub async fn run_with_batch_size(self, batch_size: usize, cancel: Rc<Cell<bool>>) {
         while !cancel.get() {
             let timestamp = Instant::now();
             let mut packets_processed = 0;
@@ -232,7 +235,7 @@ impl Reactor<DpdkDevice> {
 
             // Yield to let other async tasks run (accept handlers, recv futures, etc.)
             // Without this, spawned tasks would starve during idle periods
-            R::yield_now().await;
+            yield_now().await;
         }
     }
 }

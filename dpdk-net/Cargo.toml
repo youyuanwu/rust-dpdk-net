@@ -6,18 +6,13 @@ license.workspace = true
 authors.workspace = true
 documentation.workspace = true
 repository.workspace = true
-description = "DPDK networking (with tokio)"
+description = "DPDK networking"
 readme = "../README.md"
-
-[features]
-default = ["tokio"]
-tokio = ["dep:tokio"]
 
 [dependencies]
 smoltcp.workspace = true
 arrayvec.workspace = true
 nix = { workspace = true, features = ["sched"] }
-tokio = { workspace = true, default-features = false,features = ["rt"], optional = true }
 futures-io.workspace = true
 dpdk-net-sys.workspace = true
 tracing.workspace = true
