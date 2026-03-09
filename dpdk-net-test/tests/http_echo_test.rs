@@ -8,7 +8,7 @@
 use dpdk_net::BoxError;
 use dpdk_net::api::rte::eal::EalBuilder;
 use dpdk_net::runtime::ReactorHandle;
-use dpdk_net::runtime::tokio_compat::TokioTcpStream;
+use dpdk_net::runtime::compat_stream::AsyncTcpStream;
 use dpdk_net::socket::{TcpListener, TcpStream};
 
 use dpdk_net_axum::{DpdkApp, WorkerContext};
@@ -23,6 +23,7 @@ use hyper_util::rt::TokioIo;
 use smoltcp::wire::{IpAddress, Ipv4Address};
 
 use serial_test::serial;
+use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::sync::CancellationToken;
 
 const SERVER_PORT: u16 = 8080;
@@ -57,8 +58,8 @@ async fn run_http_client(
 
     println!("HTTP Client {}: TCP connected", client_id);
 
-    // Wrap for hyper: TokioTcpStream -> TokioIo
-    let io = TokioIo::new(TokioTcpStream::new(stream));
+    // Wrap for hyper: TokioTcpStream -> compat -> TokioIo
+    let io = TokioIo::new(AsyncTcpStream::new(stream).compat());
 
     // Create HTTP/1.1 connection
     let (mut sender, conn) = client_http1::handshake(io)

@@ -10,9 +10,10 @@ use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 
 use dpdk_net::runtime::ReactorHandle;
-use dpdk_net::runtime::tokio_compat::TokioTcpStream;
+use dpdk_net::runtime::compat_stream::AsyncTcpStream;
 use dpdk_net::socket::TcpStream;
 use smoltcp::wire::IpAddress;
+use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt};
 
 use crate::error::Error;
 use crate::executor::LocalExecutor;
@@ -176,12 +177,12 @@ impl Connection {
         local_port: u16,
         rx_buffer: usize,
         tx_buffer: usize,
-    ) -> Result<TokioIo<TokioTcpStream>, Error> {
+    ) -> Result<TokioIo<Compat<AsyncTcpStream>>, Error> {
         let stream = TcpStream::connect(reactor, addr, port, local_port, rx_buffer, tx_buffer)?;
         stream
             .wait_connected()
             .await
             .map_err(|()| Error::ConnectionFailed)?;
-        Ok(TokioIo::new(TokioTcpStream::new(stream)))
+        Ok(TokioIo::new(AsyncTcpStream::new(stream).compat()))
     }
 }

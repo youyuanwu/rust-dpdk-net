@@ -48,8 +48,9 @@ use hyper::http::{
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::{debug, error, info};
 
-use dpdk_net::runtime::tokio_compat::TokioTcpStream;
+use dpdk_net::runtime::compat_stream::AsyncTcpStream;
 use dpdk_net::socket::TcpListener;
+use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt};
 use tokio_util::sync::CancellationToken;
 
 /// Maximum number of headers to parse
@@ -502,7 +503,7 @@ where
                             let queue_id = self.queue_id;
                             debug!(queue_id, conn_id = id, "HTTP/1.1 connection accepted");
 
-                            let io = TokioTcpStream::new(stream);
+                            let io = AsyncTcpStream::new(stream).compat();
                             let handler = self.handler.clone();
 
                             tokio::task::spawn_local(async move {
@@ -531,7 +532,7 @@ where
 
 /// Handle a single HTTP connection (potentially multiple requests with keep-alive).
 async fn handle_connection<F, Fut>(
-    io: TokioTcpStream,
+    io: Compat<AsyncTcpStream>,
     handler: F,
     queue_id: usize,
     conn_id: u64,

@@ -18,6 +18,7 @@ smoltcp.workspace = true
 arrayvec.workspace = true
 nix = { workspace = true, features = ["sched"] }
 tokio = { workspace = true, default-features = false,features = ["rt"], optional = true }
+futures-io.workspace = true
 dpdk-net-sys.workspace = true
 tracing.workspace = true
 arc-swap.workspace = true

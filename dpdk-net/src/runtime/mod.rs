@@ -48,12 +48,12 @@
 //! }
 //! ```
 
-mod reactor;
 #[cfg(feature = "tokio")]
-pub mod tokio_compat;
+pub mod compat_stream;
+mod reactor;
 mod traits;
 
-pub use reactor::{Reactor, ReactorHandle, ReactorInner};
 #[cfg(feature = "tokio")]
-pub use tokio_compat::{TokioRuntime, TokioTcpStream};
+pub use compat_stream::{AsyncTcpStream, TokioRuntime};
+pub use reactor::{Reactor, ReactorHandle, ReactorInner};
 pub use traits::Runtime;

@@ -3,33 +3,29 @@
 //! This module provides:
 //! - [`TokioRuntime`]: Implementation of the [`Runtime`](super::Runtime) trait for tokio
 //! - [`TokioTcpStream`]: A wrapper around [`TcpStream`](crate::socket::TcpStream) that implements
-//!   tokio's [`AsyncRead`](tokio::io::AsyncRead) and [`AsyncWrite`](tokio::io::AsyncWrite) traits
+//!   [`futures_io::AsyncRead`] and [`futures_io::AsyncWrite`] traits
 //!
 //! # Example
 //!
 //! ```no_run
 //! use dpdk_net::socket::TcpStream;
-//! use dpdk_net::runtime::tokio_compat::TokioTcpStream;
-//! use tokio::io::{AsyncReadExt, AsyncWriteExt};
+//! use dpdk_net::runtime::compat_stream::AsyncTcpStream;
+//! use futures_io::{AsyncRead, AsyncWrite};
 //!
 //! async fn example(stream: TcpStream) {
-//!     let mut stream = TokioTcpStream::new(stream);
-//!
-//!     // Use tokio's AsyncRead/AsyncWrite traits
-//!     let mut buf = [0u8; 1024];
-//!     let n = stream.read(&mut buf).await.unwrap();
-//!     stream.write_all(&buf[..n]).await.unwrap();
+//!     let stream = AsyncTcpStream::new(stream);
+//!     // stream implements futures_io::AsyncRead + AsyncWrite
 //! }
 //! ```
 
 use super::Runtime;
 use crate::socket::TcpStream;
+use futures_io::{AsyncRead, AsyncWrite};
 use smoltcp::socket::tcp::{self, RecvError, State};
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// Tokio runtime implementation.
 ///
@@ -43,16 +39,16 @@ impl Runtime for TokioRuntime {
     }
 }
 
-/// A wrapper around [`TcpStream`] that implements tokio's async I/O traits.
+/// A wrapper around [`TcpStream`] that implements [`futures_io::AsyncRead`] and [`futures_io::AsyncWrite`].
 ///
-/// This allows using the DPDK-backed TCP stream with tokio's ecosystem,
-/// including utilities like [`AsyncReadExt`](tokio::io::AsyncReadExt),
-/// [`AsyncWriteExt`](tokio::io::AsyncWriteExt), and codec frameworks.
-pub struct TokioTcpStream {
+/// This allows using the DPDK-backed TCP stream with async ecosystems.
+/// Use [`tokio_util::compat::FuturesAsyncReadCompatExt`] to adapt for tokio-based
+/// consumers like hyper's [`TokioIo`](hyper_util::rt::TokioIo).
+pub struct AsyncTcpStream {
     inner: TcpStream,
 }
 
-impl TokioTcpStream {
+impl AsyncTcpStream {
     /// Create a new tokio-compatible wrapper around a [`TcpStream`].
     pub fn new(stream: TcpStream) -> Self {
         Self { inner: stream }
@@ -74,35 +70,30 @@ impl TokioTcpStream {
     }
 }
 
-impl AsyncRead for TokioTcpStream {
+impl AsyncRead for AsyncTcpStream {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
         let mut inner = this.inner.reactor.borrow_mut();
         let socket = inner.sockets.get_mut::<tcp::Socket>(this.inner.handle);
 
-        // Try to receive data into the unfilled portion of the buffer
-        let unfilled = buf.initialize_unfilled();
-        if unfilled.is_empty() {
-            return Poll::Ready(Ok(()));
+        if buf.is_empty() {
+            return Poll::Ready(Ok(0));
         }
 
-        match socket.recv_slice(unfilled) {
+        match socket.recv_slice(buf) {
             Ok(0) => {
                 // No data available yet - register waker and wait
                 socket.register_recv_waker(cx.waker());
                 Poll::Pending
             }
-            Ok(n) => {
-                buf.advance(n);
-                Poll::Ready(Ok(()))
-            }
+            Ok(n) => Poll::Ready(Ok(n)),
             Err(RecvError::Finished) => {
                 // EOF - connection closed gracefully
-                Poll::Ready(Ok(()))
+                Poll::Ready(Ok(0))
             }
             Err(RecvError::InvalidState) => Poll::Ready(Err(io::Error::new(
                 io::ErrorKind::NotConnected,
@@ -112,7 +103,7 @@ impl AsyncRead for TokioTcpStream {
     }
 }
 
-impl AsyncWrite for TokioTcpStream {
+impl AsyncWrite for AsyncTcpStream {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -155,7 +146,7 @@ impl AsyncWrite for TokioTcpStream {
         }
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
 
         // First, initiate close if not already closing
@@ -189,7 +180,7 @@ impl AsyncWrite for TokioTcpStream {
     }
 }
 
-impl From<TcpStream> for TokioTcpStream {
+impl From<TcpStream> for AsyncTcpStream {
     fn from(stream: TcpStream) -> Self {
         Self::new(stream)
     }

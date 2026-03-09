@@ -9,7 +9,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest ]
-        rust: [ 1.90.0, 1.93.0 ]
+        rust: [ 1.90.0, 1.94.0 ]
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -56,17 +56,17 @@ jobs:
 
     - name: Build DPDK deb package
       # sudo needed: meson install writes to /usr/local log dir even with DESTDIR staging
-      if: matrix.rust == '1.93.0'
+      if: matrix.rust == '1.94.0'
       run: |
         sudo cmake --build build --target dpdk_deb
 
     - name: Build release binaries
-      if: matrix.rust == '1.93.0'
+      if: matrix.rust == '1.94.0'
       run: |
         cargo +${{ matrix.rust }} build --release --bin dpdk-bench-server --bin dpdk-bench-client
 
     - name: Upload DPDK deb artifact
-      if: matrix.rust == '1.93.0'
+      if: matrix.rust == '1.94.0'
       uses: actions/upload-artifact@v4
       with:
         name: dpdk-deb
@@ -74,7 +74,7 @@ jobs:
         if-no-files-found: error
     
     - name: Upload bench binaries artifact
-      if: matrix.rust == '1.93.0'
+      if: matrix.rust == '1.94.0'
       uses: actions/upload-artifact@v4
       with:
         name: bench-binaries

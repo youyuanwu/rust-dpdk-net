@@ -22,7 +22,8 @@ arrayvec = "0.7"
 serial_test = "3"
 nix = { version = "0.31", features = [] }
 tokio = { version = "1", default-features = false, features = [] }
-tokio-util = "0.7"
+tokio-util = { version = "0.7", features = ["compat"] }
+futures-io = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 hyper = { version = "1", features = ["http1", "http2", "server", "client"] }
