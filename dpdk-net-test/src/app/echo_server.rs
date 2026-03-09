@@ -119,7 +119,7 @@ pub async fn handle_connection(stream: TcpStream, conn_id: u64, stats: Arc<Serve
     }
 
     // Close gracefully
-    stream.close().await;
+    stream.close().await.ok();
 }
 
 /// Async TCP echo server.

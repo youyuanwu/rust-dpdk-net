@@ -40,7 +40,6 @@
 
 use std::future::Future;
 
-use dpdk_net::runtime::compat_stream::AsyncTcpStream;
 use dpdk_net::socket::TcpListener;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, error, info};
@@ -198,7 +197,7 @@ where
                             let queue_id = self.queue_id;
                             debug!(queue_id, conn_id = id, "HTTP connection accepted");
 
-                            let io = TokioIo::new(AsyncTcpStream::new(stream).compat());
+                            let io = TokioIo::new(stream.compat());
                             let handler = wrapped_handler.clone();
 
                             tokio::task::spawn_local(async move {
@@ -281,7 +280,7 @@ where
                             let queue_id = self.queue_id;
                             debug!(queue_id, conn_id = id, "HTTP/1.1 connection accepted");
 
-                            let io = TokioIo::new(AsyncTcpStream::new(stream).compat());
+                            let io = TokioIo::new(stream.compat());
                             let handler = wrapped_handler.clone();
 
                             tokio::task::spawn_local(async move {
@@ -368,7 +367,7 @@ where
                             let queue_id = self.queue_id;
                             debug!(queue_id, conn_id = id, "HTTP/2 connection accepted");
 
-                            let io = TokioIo::new(AsyncTcpStream::new(stream).compat());
+                            let io = TokioIo::new(stream.compat());
                             let handler = wrapped_handler.clone();
 
                             tokio::task::spawn_local(async move {

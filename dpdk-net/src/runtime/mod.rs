@@ -1,4 +1,4 @@
-//! Async reactor and runtime support for DPDK + smoltcp networking.
+//! Async reactor support for DPDK + smoltcp networking.
 //!
 //! This module provides the reactor pattern implementation that continuously polls
 //! DPDK for packets and processes them through smoltcp. The reactor is runtime-agnostic
@@ -48,8 +48,6 @@
 //! }
 //! ```
 
-pub mod compat_stream;
 mod reactor;
 
-pub use compat_stream::AsyncTcpStream;
 pub use reactor::{Reactor, ReactorHandle, ReactorInner};

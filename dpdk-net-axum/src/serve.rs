@@ -13,7 +13,6 @@
 //! [`AutoBuilder`]: hyper_util::server::conn::auto::Builder
 
 use axum::Router;
-use dpdk_net::runtime::compat_stream::AsyncTcpStream;
 use dpdk_net::socket::TcpListener;
 use dpdk_net_util::LocalExecutor;
 use hyper_util::rt::TokioIo;
@@ -71,7 +70,7 @@ pub async fn serve(mut listener: TcpListener, app: Router, shutdown: impl Future
                         debug!(conn_id = id, "Connection accepted");
 
                         let app = app.clone();
-                        let io = TokioIo::new(AsyncTcpStream::new(stream).compat());
+                        let io = TokioIo::new(stream.compat());
 
                         tokio::task::spawn_local(async move {
                             let result = AutoBuilder::new(LocalExecutor)

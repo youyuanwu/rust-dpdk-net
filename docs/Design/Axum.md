@@ -36,7 +36,7 @@ The axum integration is built **on top of `DpdkApp`** (see [App.md](App.md)). `D
 ### How It Works
 
 1. `serve()` runs an accept loop on `listener.accept()`
-2. Each accepted stream is wrapped: `TokioIo::new(TokioTcpStream::new(stream))`
+2. Each accepted stream is wrapped: `TokioIo::new(stream.compat())` (using `tokio_util::compat`)
 3. `Router` is cloned per connection and wrapped with `TowerToHyperService` to bridge tower's `Service` to hyper's `Service`
 4. `AutoBuilder::new(LocalExecutor).serve_connection(io, service)` handles HTTP/1.1 or HTTP/2
 

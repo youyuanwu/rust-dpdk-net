@@ -34,7 +34,7 @@ This enables building network applications (HTTP servers, proxies, etc.) that by
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Async Runtime Layer (tokio)                      │
+│                    Async Runtime Layer                               │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -55,7 +55,7 @@ This enables building network applications (HTTP servers, proxies, etc.) that by
 
 ## Features
 
-- **Async/await support** - Custom `TcpListener`, `TcpStream` APIs compatible with tokio
+- **Async/await support** - `TcpListener`, `TcpStream` with `futures_io::AsyncRead`/`AsyncWrite`; runtime-agnostic
 - **axum integration** - Serve axum `Router` directly on DPDK sockets (`dpdk-net-axum`)
 - **tonic gRPC** - gRPC server and client over DPDK (`dpdk-net-tonic`)
 - **HTTP client** - `DpdkHttpClient` for HTTP/1.1 and HTTP/2 requests (`dpdk-net-util`)

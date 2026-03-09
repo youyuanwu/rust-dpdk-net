@@ -107,16 +107,16 @@ pub struct CrossQueueForwarder {
 ```rust
 // Option 1: rustls integration
 pub struct TlsTcpStream {
-    inner: TokioTcpStream,
+    inner: TcpStream,
     tls: rustls::StreamOwned<...>,
 }
 
-// Option 2: Provide TokioTcpStream for external integration
-let stream = TokioTcpStream::new(tcp_stream);
-let tls_stream = tokio_rustls::TlsAcceptor::accept(stream).await?;
+// Option 2: Use TcpStream directly with external TLS
+use tokio_util::compat::FuturesAsyncReadCompatExt;
+let tls_stream = tokio_rustls::TlsAcceptor::accept(stream.compat()).await?;
 ```
 
-Since `TokioTcpStream` already implements `AsyncRead`/`AsyncWrite`, external TLS is already possible. Document the pattern and add examples.
+Since `TcpStream` directly implements `futures_io::AsyncRead`/`AsyncWrite`, external TLS integration is straightforward. Use `tokio_util::compat` to bridge to tokio traits when needed. Document the pattern and add examples.
 
 ---
 
@@ -350,14 +350,9 @@ pub struct PerQueueMempool {
 
 ### 5.1 Async Runtime Abstraction
 
-**Current State:** Tokio-specific with `TokioRuntime` trait.
+**Current State:** ✅ Runtime-agnostic. The reactor uses a built-in `yield_now()` implementation that works with any async executor. `TcpStream` implements `futures_io::AsyncRead`/`AsyncWrite` directly.
 
-**Gap:** Some users prefer `async-std`, `smol`, or `glommio`.
-
-**Improvements:**
-- Complete the `Runtime` trait abstraction
-- Add `async-std` and `smol` implementations
-- Consider `glommio` for io_uring integration
+**No further work needed** — the library works with tokio, async-std, smol, or any other executor.
 
 ---
 
@@ -388,7 +383,7 @@ pub struct PerQueueMempool {
 
 | Feature | capsule | ANLAB-KAIST | async-dpdk | rpkt | **dpdk-net** |
 |---------|---------|-------------|------------|------|--------------|
-| Async Runtime | No | No | Tokio | No | **Tokio** |
+| Async Runtime | No | No | Tokio | No | **Any** (runtime-agnostic) |
 | TCP Stack | No (raw) | No | No | No | **smoltcp** |
 | Multi-queue RSS | Manual | Manual | Manual | N/A | **Automatic** |
 | Lcore APIs | No | **Yes** | Partial | N/A | **Yes** ✅ |

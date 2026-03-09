@@ -82,7 +82,7 @@ async fn run_client(
     println!("Client {}: echo verified ✓", client_id);
 
     // Close gracefully
-    client.close().await;
+    client.close().await.ok();
 
     Ok(())
 }

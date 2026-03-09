@@ -19,9 +19,9 @@ This document describes the architecture of the `dpdk-net` crate, a Rust library
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Async Runtime Layer (tokio)                      │
+│                    Async Runtime Layer                               │
 │   ┌─────────────────────────────────────────────────────────────┐   │
-│   │  Reactor  │  TokioTcpStream  │  TcpRecvFuture/TcpSendFuture │   │
+│   │  Reactor  │  TcpStream (futures_io AsyncRead/AsyncWrite)    │   │
 │   └─────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
@@ -102,8 +102,7 @@ The main library providing safe Rust abstractions over DPDK and smoltcp integrat
 | [dpdk_device.rs](../dpdk-net/src/tcp/dpdk_device.rs) | `DpdkDevice` - smoltcp `Device` trait implementation |
 | [arp_cache.rs](../dpdk-net/src/tcp/arp_cache.rs) | `SharedArpCache` - Lock-free SPMC ARP cache for multi-queue |
 | [async_net/mod.rs](../dpdk-net/src/tcp/async_net/mod.rs) | `Reactor` - Async polling loop driving smoltcp |
-| [async_net/socket.rs](../dpdk-net/src/tcp/async_net/socket.rs) | `TcpStream`, `TcpListener` - Async TCP sockets |
-| [async_net/tokio_compat.rs](../dpdk-net/src/tcp/async_net/tokio_compat.rs) | `TokioTcpStream` - Tokio `AsyncRead`/`AsyncWrite` adapter |
+| [async_net/socket.rs](../dpdk-net/src/tcp/async_net/socket.rs) | `TcpStream`, `TcpListener` - Async TCP sockets with `futures_io::AsyncRead`/`AsyncWrite` |
 
 ### 3. `dpdk-net-util` - Application Framework & HTTP Client
 
@@ -187,12 +186,12 @@ pub struct DpdkDevice {
 
 ### Reactor
 
-The async polling loop that drives network I/O. Uses cooperative scheduling with tokio.
+The async polling loop that drives network I/O. Runtime-agnostic — works with any async executor (tokio, async-std, smol, etc.).
 
 ```rust
 impl Reactor<DpdkDevice> {
-    pub async fn run_with<R: Runtime>(self, batch_size: usize) -> ! {
-        loop {
+    pub async fn run_with_batch_size(self, batch_size: usize, cancel: Rc<Cell<bool>>) {
+        while !cancel.get() {
             let timestamp = Instant::now();
             let mut packets_processed = 0;
 
@@ -217,7 +216,7 @@ impl Reactor<DpdkDevice> {
             inner.cleanup_orphaned();
 
             // Yield to let other async tasks run
-            R::yield_now().await;
+            yield_now().await;
         }
     }
 }
@@ -241,20 +240,21 @@ let n = stream.recv(&mut buf).await?;
 
 **Waker Integration:** When a socket operation would block, smoltcp registers the waker:
 ```rust
-// In TcpRecvFuture::poll()
+// In TcpStream::poll_recv()
 socket.register_recv_waker(cx.waker());  // smoltcp will wake us when data arrives
 ```
 
-### TokioTcpStream
+### futures_io Integration
 
-Adapter that implements `tokio::io::AsyncRead` and `tokio::io::AsyncWrite`, enabling use with:
-- `hyper` for HTTP servers
+`TcpStream` directly implements `futures_io::AsyncRead` and `futures_io::AsyncWrite`, enabling use with:
+- `hyper` for HTTP servers (via `tokio_util::compat` adapter)
 - `tokio-util` codecs
-- Any tokio async I/O utility
+- Any async I/O framework that uses `futures_io` traits
 
 ```rust
-let stream = TokioTcpStream::new(tcp_stream);
-let io = TokioIo::new(stream);  // For hyper
+use tokio_util::compat::FuturesAsyncReadCompatExt;
+
+let io = TokioIo::new(stream.compat());  // For hyper
 let (sender, conn) = http1::handshake(io).await?;
 ```
 
@@ -339,10 +339,7 @@ The batch size controls the tradeoff between throughput and responsiveness:
 
 ```rust
 // Custom batch size
-reactor.run_with_batch_size(64).await;
-
-// Or with explicit runtime
-reactor.run_with::<TokioRuntime>(128).await;
+reactor.run_with_batch_size(64, cancel).await;
 ```
 
 ---
@@ -547,7 +544,7 @@ Async tests use `DpdkApp` + `WorkerContext`. Manual tests use `create_test_conte
 1. Application calls stream.recv(&mut buf).await
          │
          ▼
-2. TcpRecvFuture::poll() called by tokio
+2. TcpStream::poll_recv() called by executor
          │
          ▼
 3. Check smoltcp socket buffer for data

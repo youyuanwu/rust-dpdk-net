@@ -59,7 +59,7 @@ async fn run_echo_server(mut listener: TcpListener, done_tx: tokio::sync::onesho
 
     // Wait a bit for client to receive, then close
     tokio::task::yield_now().await;
-    stream.close().await;
+    stream.close().await.ok();
 
     // Signal done
     let _ = done_tx.send(());
@@ -122,9 +122,7 @@ async fn run_echo_client(
     println!("Client: echo verified ✓");
 
     // Close gracefully
-    stream.close().await;
-
-    // Wait for server to finish
+    stream.close().await.ok();
     let _ = done_rx.await;
 
     Ok(())

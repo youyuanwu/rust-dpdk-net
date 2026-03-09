@@ -14,10 +14,7 @@
 mod tcp;
 mod udp;
 
-pub use tcp::{
-    AcceptFuture, CloseFuture, TcpListener, TcpRecvFuture, TcpSendFuture, TcpStream,
-    WaitConnectedFuture,
-};
+pub use tcp::{AcceptFuture, TcpListener, TcpStream, WaitConnectedFuture};
 pub use udp::{UdpRecvFuture, UdpSendFuture, UdpSocket};
 
 // Re-export smoltcp error types for convenience

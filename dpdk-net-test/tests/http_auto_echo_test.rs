@@ -9,7 +9,6 @@
 use dpdk_net::BoxError;
 use dpdk_net::api::rte::eal::EalBuilder;
 use dpdk_net::runtime::ReactorHandle;
-use dpdk_net::runtime::compat_stream::AsyncTcpStream;
 use dpdk_net::socket::{TcpListener, TcpStream};
 
 use dpdk_net_axum::{DpdkApp, WorkerContext};
@@ -68,8 +67,8 @@ async fn run_http_client(
 
     println!("HTTP Client {} ({:?}): TCP connected", client_id, version);
 
-    // Wrap for hyper: TokioTcpStream -> compat -> TokioIo
-    let io = TokioIo::new(AsyncTcpStream::new(stream).compat());
+    // Wrap for hyper: TcpStream -> compat -> TokioIo
+    let io = TokioIo::new(stream.compat());
 
     // Build request body
     let body_text = format!("Hello from {:?} client {}!", version, client_id);

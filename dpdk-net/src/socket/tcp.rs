@@ -2,11 +2,13 @@
 
 use crate::device::DpdkDevice;
 use crate::runtime::{ReactorHandle, ReactorInner};
+use futures_io::{AsyncRead, AsyncWrite};
 use smoltcp::iface::SocketHandle;
-use smoltcp::socket::tcp::{self, ConnectError, ListenError, RecvError, SendError, State};
+use smoltcp::socket::tcp::{self, ConnectError, ListenError, RecvError, State};
 use smoltcp::wire::IpAddress;
 use std::cell::RefCell;
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
@@ -93,23 +95,24 @@ impl TcpStream {
         socket.state()
     }
 
-    /// Send data asynchronously
+    /// Send all data asynchronously (write-all semantics).
     ///
-    /// Returns the number of bytes sent when the operation completes.
-    pub fn send<'a>(&'a self, data: &'a [u8]) -> TcpSendFuture<'a> {
-        TcpSendFuture {
-            socket: self,
-            data,
-            offset: 0,
+    /// Returns the total number of bytes sent when all data has been written.
+    pub async fn send(&self, data: &[u8]) -> io::Result<usize> {
+        let mut offset = 0;
+        while offset < data.len() {
+            let n = std::future::poll_fn(|cx| self.poll_send(cx, &data[offset..])).await?;
+            offset += n;
         }
+        Ok(data.len())
     }
 
-    /// Receive data asynchronously
+    /// Receive data asynchronously.
     ///
     /// Returns the number of bytes received when the operation completes.
-    /// Returns 0 if the connection was closed gracefully.
-    pub fn recv<'a>(&'a self, buf: &'a mut [u8]) -> TcpRecvFuture<'a> {
-        TcpRecvFuture { socket: self, buf }
+    /// Returns `Ok(0)` if the connection was closed gracefully (EOF).
+    pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        std::future::poll_fn(|cx| self.poll_recv(cx, buf)).await
     }
 
     /// Wait for the connection to be fully established
@@ -119,19 +122,12 @@ impl TcpStream {
         WaitConnectedFuture { socket: self }
     }
 
-    /// Close the stream gracefully and wait for shutdown to complete
+    /// Close the stream gracefully and wait for shutdown to complete.
     ///
-    /// This initiates a graceful shutdown (FIN) and returns a future that
-    /// completes when the connection is fully closed. The socket remains
-    /// in the socket set until the future completes, allowing the TCP
-    /// state machine to process the FIN handshake.
-    pub fn close(&self) -> CloseFuture<'_> {
-        {
-            let mut inner = self.reactor.borrow_mut();
-            let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
-            socket.close();
-        }
-        CloseFuture { socket: self }
+    /// Initiates a graceful shutdown (FIN) and waits until the connection
+    /// reaches the Closed or TimeWait state.
+    pub async fn close(&self) -> io::Result<()> {
+        std::future::poll_fn(|cx| self.poll_close_io(cx)).await
     }
 
     /// Abort the connection immediately
@@ -141,6 +137,122 @@ impl TcpStream {
         let mut inner = self.reactor.borrow_mut();
         let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
         socket.abort();
+    }
+
+    /// Poll for reading data from the socket.
+    ///
+    /// This is the core poll implementation used by both [`AsyncRead`] and [`recv`](Self::recv).
+    fn poll_recv(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        if buf.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+
+        let mut inner = self.reactor.borrow_mut();
+        let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
+
+        match socket.recv_slice(buf) {
+            Ok(0) => {
+                socket.register_recv_waker(cx.waker());
+                Poll::Pending
+            }
+            Ok(n) => Poll::Ready(Ok(n)),
+            Err(RecvError::Finished) => Poll::Ready(Ok(0)),
+            Err(RecvError::InvalidState) => Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "socket in invalid state for receiving",
+            ))),
+        }
+    }
+
+    /// Poll for writing data to the socket.
+    ///
+    /// This is the core poll implementation used by both [`AsyncWrite`] and [`send`](Self::send).
+    fn poll_send(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        let mut inner = self.reactor.borrow_mut();
+        let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
+
+        match socket.send_slice(buf) {
+            Ok(0) if !buf.is_empty() => {
+                socket.register_send_waker(cx.waker());
+                Poll::Pending
+            }
+            Ok(n) => Poll::Ready(Ok(n)),
+            Err(tcp::SendError::InvalidState) => Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "socket in invalid state for sending",
+            ))),
+        }
+    }
+
+    /// Poll for flushing the send buffer.
+    fn poll_flush_io(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let inner = self.reactor.borrow_mut();
+        let socket = inner.sockets.get::<tcp::Socket>(self.handle);
+
+        if socket.send_queue() == 0 {
+            Poll::Ready(Ok(()))
+        } else {
+            drop(inner);
+            let mut inner = self.reactor.borrow_mut();
+            let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
+            socket.register_send_waker(cx.waker());
+            Poll::Pending
+        }
+    }
+
+    /// Poll for graceful connection close.
+    fn poll_close_io(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        {
+            let mut inner = self.reactor.borrow_mut();
+            let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
+
+            match socket.state() {
+                State::Closed | State::TimeWait => return Poll::Ready(Ok(())),
+                State::FinWait1 | State::FinWait2 | State::Closing | State::LastAck => {}
+                _ => socket.close(),
+            }
+        }
+
+        {
+            let mut inner = self.reactor.borrow_mut();
+            let socket = inner.sockets.get_mut::<tcp::Socket>(self.handle);
+
+            match socket.state() {
+                State::Closed | State::TimeWait => Poll::Ready(Ok(())),
+                _ => {
+                    socket.register_send_waker(cx.waker());
+                    Poll::Pending
+                }
+            }
+        }
+    }
+}
+
+impl AsyncRead for TcpStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        self.poll_recv(cx, buf)
+    }
+}
+
+impl AsyncWrite for TcpStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.poll_send(cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.poll_flush_io(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.poll_close_io(cx)
     }
 }
 
@@ -391,82 +503,6 @@ impl<'a> Future for AcceptFuture<'a> {
     }
 }
 
-/// Future for sending data on a TCP stream
-pub struct TcpSendFuture<'a> {
-    socket: &'a TcpStream,
-    data: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Future for TcpSendFuture<'a> {
-    type Output = Result<usize, SendError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut inner = self.socket.reactor.borrow_mut();
-        let socket = inner.sockets.get_mut::<tcp::Socket>(self.socket.handle);
-
-        // Try to send remaining data
-        let remaining = &self.data[self.offset..];
-        match socket.send_slice(remaining) {
-            // No space in send buffer - register waker and wait
-            Ok(0) => {
-                socket.register_send_waker(cx.waker());
-                Poll::Pending
-            }
-            // Some data sent
-            Ok(sent) => {
-                self.offset += sent;
-                if self.offset >= self.data.len() {
-                    // All data sent
-                    Poll::Ready(Ok(self.data.len()))
-                } else {
-                    // More data to send - register waker for next poll
-                    socket.register_send_waker(cx.waker());
-                    Poll::Pending
-                }
-            }
-            // Connection reset or invalid state
-            Err(e) => Poll::Ready(Err(e)),
-        }
-    }
-}
-
-/// Future for receiving data from a TCP stream
-pub struct TcpRecvFuture<'a> {
-    socket: &'a TcpStream,
-    buf: &'a mut [u8],
-}
-
-impl<'a> Future for TcpRecvFuture<'a> {
-    type Output = Result<usize, RecvError>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        let mut inner = this.socket.reactor.borrow_mut();
-        let socket = inner.sockets.get_mut::<tcp::Socket>(this.socket.handle);
-
-        // Try to receive data directly
-        match socket.recv_slice(this.buf) {
-            // No data available - register waker and wait
-            Ok(0) if this.buf.is_empty() => {
-                // Empty buffer - return immediately per async Read contract
-                Poll::Ready(Ok(0))
-            }
-            Ok(0) => {
-                // No data ready yet
-                socket.register_recv_waker(cx.waker());
-                Poll::Pending
-            }
-            // Data received
-            Ok(len) => Poll::Ready(Ok(len)),
-            // EOF - connection closed gracefully
-            Err(RecvError::Finished) => Poll::Ready(Ok(0)),
-            // Connection reset or invalid state
-            Err(e) => Poll::Ready(Err(e)),
-        }
-    }
-}
-
 /// Future for waiting until a stream is connected
 pub struct WaitConnectedFuture<'a> {
     socket: &'a TcpStream,
@@ -491,30 +527,6 @@ impl<'a> Future for WaitConnectedFuture<'a> {
                 Poll::Pending
             }
             // Other states - keep waiting
-            _ => {
-                socket.register_send_waker(cx.waker());
-                Poll::Pending
-            }
-        }
-    }
-}
-/// Future for waiting until a stream is closed
-pub struct CloseFuture<'a> {
-    socket: &'a TcpStream,
-}
-
-impl<'a> Future for CloseFuture<'a> {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut inner = self.socket.reactor.borrow_mut();
-        let socket = inner.sockets.get_mut::<tcp::Socket>(self.socket.handle);
-
-        // Check if we've reached a terminal state
-        match socket.state() {
-            // Fully closed - done!
-            State::Closed | State::TimeWait => Poll::Ready(()),
-            // Still closing - register waker and wait
             _ => {
                 socket.register_send_waker(cx.waker());
                 Poll::Pending
