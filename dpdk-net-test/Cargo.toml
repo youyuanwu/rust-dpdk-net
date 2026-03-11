@@ -23,6 +23,7 @@ httparse.workspace = true
 kimojio.workspace = true
 tonic.workspace = true
 tonic-prost.workspace = true
+tonic-tls.workspace = true
 prost.workspace = true
 
 [build-dependencies]
@@ -30,6 +31,8 @@ tonic-prost-build.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
-dpdk-net-util = { workspace = true, features = ["tonic"] }
+dpdk-net-util = { workspace = true, features = ["tonic", "tonic-tls"] }
 http.workspace = true
 axum.workspace = true
+rcgen.workspace = true
+openssl.workspace = true

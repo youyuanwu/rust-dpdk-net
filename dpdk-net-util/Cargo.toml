@@ -11,6 +11,7 @@ license.workspace = true
 default = []
 axum = ["dep:axum"]
 tonic = ["dep:tonic", "dep:http", "dep:tower", "dep:futures-core", "axum"]
+tonic-tls = ["tonic", "dep:tonic-tls"]
 
 [dependencies]
 arc-swap.workspace = true
@@ -33,6 +34,9 @@ axum = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 tower = { workspace = true, optional = true }
+
+# Optional: tonic-tls support
+tonic-tls = { workspace = true, optional = true }
 
 [dev-dependencies]
 dpdk-net-test.workspace = true

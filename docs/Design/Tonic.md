@@ -3,7 +3,7 @@
 gRPC support for dpdk-net via [tonic](https://github.com/hyperium/tonic). Built on top of `DpdkApp` and reuses the axum module for the server side (see [Axum.md](Axum.md)).
 
 Module: [`dpdk-net-util/src/tonic/`](../../dpdk-net-util/src/tonic/)  
-Tests: [`tonic_grpc_test.rs`](../../dpdk-net-test/tests/tonic_grpc_test.rs) (on-lcore), [`tonic_bridge_test.rs`](../../dpdk-net-test/tests/tonic_bridge_test.rs) (OS thread bridge)
+Tests: [`tonic_grpc_test.rs`](../../dpdk-net-test/tests/tonic_grpc_test.rs) (on-lcore), [`tonic_bridge_test.rs`](../../dpdk-net-test/tests/tonic_bridge_test.rs) (bridge), [`tonic_bridge_tls_test.rs`](../../dpdk-net-test/tests/tonic_bridge_tls_test.rs) (bridge + TLS)
 
 ## Server (on-lcore)
 
@@ -19,7 +19,7 @@ The channel injects scheme and authority from the connect URI into outgoing requ
 
 ---
 
-## OS Thread Bridge Integration
+## OS Thread Bridge
 
 For OS threads, `BridgeTcpStream` is `Send`, unlocking tonic's native `tonic::transport` APIs — `serve_with_incoming_shutdown` for the server and `Endpoint::connect_with_connector` for the client.
 
@@ -38,34 +38,50 @@ Endpoint::connect_with_connector(BridgeConnector)│
   │     → TokioIo<BridgeIo> (Send) ◄──chan──     relay_task (owns !Send TcpStream)
   ├── tonic builds HTTP/2 conn internally        │
   └── Channel (Clone + Send)                     │
-       client.say_hello(req)                     │
-       → HTTP/2 frames            ───data──►     relay → dpdk_stream.send()
-       ← response                 ◄──data──      relay ← dpdk_stream.recv()
                                                  │
 Server::builder()                                │
-  .add_service(greeter)                          │
   .serve_with_incoming_shutdown(                 │
-      BridgeIncoming::new(listener), ◄──chan──   accept_loop → relay_task per conn
-      signal)                                    │
-  ├── tonic manages per-conn tasks               │
-  └── tokio::spawn (not spawn_local)             │
+      BridgeIncoming, ...) ◄──────────chan──     accept_loop → relay_task per conn
 ```
 
 ### Bridge Types
 
-**`BridgeIo`** — Newtype wrapping `Compat<BridgeTcpStream>`. Converts `futures_io` traits to `tokio::io` via `.compat()` and implements tonic's `Connected` trait (with `ConnectInfo = ()`).
+| Type | Role |
+|------|------|
+| `BridgeIo` | `Compat<BridgeTcpStream>` + `Connected`. Adapts futures-io to tokio-io. |
+| `BridgeIncoming` | `Stream<Item = Result<BridgeIo, BridgeError>>` wrapping `BridgeTcpListener`. |
+| `BridgeConnector` | `tower::Service<Uri>` → `TokioIo<BridgeIo>`. For `Endpoint::connect_with_connector()`. |
 
-**`BridgeIncoming`** — Concrete `Stream<Item = Result<BridgeIo, BridgeError>>` wrapping `BridgeTcpListener`. Implements `Stream` by delegating to the listener's internal `mpsc::Receiver::poll_recv`. No `async_stream` dependency, no boxing.
+`BridgeConnector` returns `TokioIo<BridgeIo>` because tonic's connector path requires hyper 1.x IO traits, while the server path uses tokio IO traits directly.
 
-**`BridgeConnector`** — `tower::Service<Uri>` that parses host/port from the URI, calls `bridge.connect()`, and returns `TokioIo<BridgeIo>`. The `TokioIo` wrapper is needed because tonic's connector path requires `hyper::rt::io::Read + Write` (hyper 1.x IO traits), while the server path (`serve_with_incoming_shutdown`) uses `tokio::io::AsyncRead + AsyncWrite` directly.
+### TLS (feature-gated: `tonic-tls`)
 
-### What tonic handles natively
+TLS for the bridge path via [`tonic-tls`](https://github.com/youyuanwu/tonic-tls) with OpenSSL. TLS termination runs on the OS thread — the DPDK lcore relays raw TCP bytes.
 
-By using tonic's transport APIs instead of manual hyper plumbing:
-- **Server**: connection management, HTTP/2 tuning, graceful shutdown/drain, interceptors/layers, health checking, reflection
-- **Client**: `Channel` is `Clone + Send`, automatic reconnect, scheme/authority injection (`AddOrigin`), configurable timeouts/keepalive, interceptors, load balancing
+| Type | Role |
+|------|------|
+| `BridgeTransport` | `tonic_tls::Transport<Io = BridgeIo>`. Like `BridgeConnector` but returns `BridgeIo` directly — tonic-tls adds its own `TokioIo` + TLS wrapping. |
+| `BridgeIncoming` | Also implements `tonic_tls::Incoming<Io = BridgeIo>` (blanket — already a compatible `Stream`). |
 
-Mixed REST + gRPC on OS threads: convert tonic routes to an axum `Router` and use a manual bridge accept loop instead of `serve_with_incoming_shutdown`.
+**Client:**
+```rust
+let transport = BridgeTransport::new(bridge);
+let tls_conn = tonic_tls::openssl::TlsConnector::new(
+    transport, ssl_connector, "server.example.com".into(),
+);
+let channel = Endpoint::from_static("https://10.0.0.1:8443")
+    .connect_with_connector(tls_conn).await?;
+```
+
+**Server:**
+```rust
+let tls_incoming = tonic_tls::openssl::TlsIncoming::new(
+    BridgeIncoming::new(listener), ssl_acceptor,
+);
+Server::builder()
+    .add_service(GreeterServer::new(greeter))
+    .serve_with_incoming_shutdown(tls_incoming, signal).await?;
+```
 
 ### Module Layout
 
@@ -75,10 +91,14 @@ dpdk-net-util/src/tonic/
 ├── serve.rs             # on-lcore serve() — delegates to axum::serve
 ├── channel.rs           # DpdkGrpcChannel — on-lcore !Send client
 └── bridge/
-    ├── mod.rs           # re-exports BridgeIo, BridgeConnector, BridgeIncoming
+    ├── mod.rs           # re-exports + cfg(feature = "tonic-tls") pub mod tls
     ├── io.rs            # BridgeIo newtype + Connected impl
-    ├── connector.rs     # BridgeConnector — tower::Service<Uri> → TokioIo<BridgeIo>
-    └── incoming.rs      # BridgeIncoming — concrete Stream adapter
+    ├── connector.rs     # BridgeConnector — tower::Service<Uri>
+    ├── incoming.rs      # BridgeIncoming — Stream adapter
+    └── tls/             # feature-gated: tonic-tls + openssl
+        ├── mod.rs       # re-exports BridgeTransport
+        ├── transport.rs # BridgeTransport — tonic_tls::Transport
+        └── incoming.rs  # tonic_tls::Incoming impl for BridgeIncoming
 ```
 
 ### Comparison
@@ -89,22 +109,18 @@ dpdk-net-util/src/tonic/
 | `Clone` (channel) | ❌ | ✅ |
 | TCP transport | `dpdk_net::TcpStream` (!Send) | `BridgeTcpStream` → `BridgeIo` (Send) |
 | HTTP/2 | manual `Connection` wrapper | tonic-managed |
-| Accept loop | manual in `axum::serve` | tonic-managed (`serve_with_incoming_shutdown`) |
-| Per-conn spawn | `spawn_local` | `tokio::spawn` |
+| TLS | ❌ (cleartext h2c only) | ✅ via tonic-tls |
 | HTTP/2 tuning | ❌ | ✅ (`Server::builder()` / `Endpoint` knobs) |
 | Interceptors | manual | ✅ native |
 | Multi-threaded | ❌ (single lcore) | ✅ (standard tokio runtime) |
 | Latency | direct NIC (~μs) | +channel relay (~10-50μs) |
 
-### When to Use Which
-
 | Scenario | Use |
 |----------|-----|
 | Max throughput, direct NIC access | On-lcore `serve()` + `DpdkGrpcChannel` |
 | Standard gRPC server over DPDK | `serve_with_incoming_shutdown` + `BridgeIncoming` |
-| gRPC client from test / CLI / microservice | `Endpoint` + `BridgeConnector` |
-| Share one channel across many tasks | `BridgeConnector` → `Channel` (Clone) |
-| Mixed: fast-path on lcore, slow RPCs on OS threads | Both — coexist on same `DpdkApp` |
+| gRPC client from test / CLI / microservice | `Endpoint` + `BridgeConnector` (or `TlsConnector`) |
+| Share one channel across many tasks | Bridge → `Channel` (Clone) |
 
 ---
 
@@ -113,35 +129,37 @@ dpdk-net-util/src/tonic/
 - Prost split: `tonic-prost-build` (codegen) + `tonic-prost` (runtime codec)
 - `tonic::body::Body` replaces private `BoxBody`
 - `Routes::into_axum_router()` replaces deprecated `into_router()`
-- `serve_with_incoming_shutdown` is on the router returned by `Server::builder().add_service()`
-- `Endpoint::connect_with_connector` accepts any `tower::Service<Uri>` — no need for `tonic::transport::Channel` directly
-- `build_transport(false)` omits the generated `connect()` convenience method on clients. Recommended for both on-lcore and bridge — bridge clients construct channels via `Endpoint::connect_with_connector()` + `Client::new(channel)`, not the generated `connect()`
+- `build_transport(false)` recommended — bridge clients construct channels via `Endpoint::connect_with_connector()`
 
 ## Limitations
 
-### On-lcore (existing)
+### On-lcore
 
 1. Cannot use `tonic::transport::Server` or `tonic::transport::Channel` — both require `Send`
 2. No TLS — cleartext HTTP/2 (h2c) only
-3. Single-threaded per lcore — one slow RPC blocks others on the same lcore
-4. `DpdkGrpcChannel` is not `Clone` — create one per tonic client instance
-5. Generated clients are `!Send` — cannot be moved between lcores
-6. Must use `build_transport(false)` in codegen
+3. Single-threaded per lcore — one slow RPC blocks others
+4. `DpdkGrpcChannel` is not `Clone` — one per client instance
+5. Generated clients are `!Send` — cannot move between lcores
 
-### Bridge (new)
+### Bridge
 
-7. Channel relay adds latency (~10-50μs per hop) compared to on-lcore direct path
-8. Throughput limited by mpsc channel capacity (256 per direction) and copy overhead (`Bytes::copy_from_slice`)
-9. Bridge worker must be spawned on an lcore before OS thread can connect — requires `wait_ready()` coordination
-10. No streaming backpressure signal from gRPC layer to bridge — relies on mpsc bounded channels and TCP window
-11. Enabling `transport` feature pulls in additional dependencies (hyper server stack, tower layers)
+6. Channel relay adds ~10-50μs latency per hop vs on-lcore
+7. Bridge worker must be spawned on lcore before OS thread can connect (`wait_ready()`)
+8. No streaming backpressure from gRPC layer to bridge — relies on mpsc bounded channels
+
+### TLS
+
+9. ~1-2ms handshake latency per new connection (amortized over connection lifetime)
+10. OpenSSL required at build time (`pkg-config openssl`)
+11. On-lcore path remains cleartext — TLS requires `Send` (bridge only)
+12. Certificate management is user responsibility via `SslAcceptor` / `SslConnector`
 
 ## References
 
 - [Axum Integration Design](Axum.md)
 - [HTTP Client Design](Client.md)
 - [OS Thread Bridge Design](OsThreadBridge.md)
-- [tonic `GrpcService` trait](https://docs.rs/tonic/latest/tonic/client/trait.GrpcService.html)
 - [tonic `serve_with_incoming_shutdown`](https://docs.rs/tonic/latest/tonic/transport/server/struct.Router.html#method.serve_with_incoming_shutdown)
 - [tonic `Endpoint::connect_with_connector`](https://docs.rs/tonic/latest/tonic/transport/struct.Endpoint.html#method.connect_with_connector)
-- [gRPC over HTTP/2 spec](https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md)
+- [`tonic-tls`](https://github.com/youyuanwu/tonic-tls)
+- [`openssl`](https://docs.rs/openssl/latest/openssl/)

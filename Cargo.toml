@@ -45,6 +45,9 @@ tonic-prost-build = "0.14"
 prost = "0.14"
 http = "1"
 tower = { version = "0.5", default-features = false }
+tonic-tls = { version = "0.7.1", default-features = false, features = ["openssl"] }
+openssl = "0.10"
+rcgen = "0.14"
 
 # crate in this workspace
 dpdk-net = { path = "dpdk-net", version = "0.1.0" }
