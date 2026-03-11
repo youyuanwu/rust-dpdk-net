@@ -1,13 +1,13 @@
 //! Tonic gRPC Test over DPDK
 //!
-//! Validates the full gRPC stack: `dpdk_net_tonic::serve` runs a Greeter
+//! Validates the full gRPC stack: `dpdk_net_util::tonic::serve` runs a Greeter
 //! gRPC server, and a `DpdkGrpcChannel`-backed client sends an RPC and
 //! verifies the response. Both server and client run on the same lcore.
 
 use dpdk_net::api::rte::eal::EalBuilder;
 use dpdk_net::socket::TcpListener;
-use dpdk_net_axum::{DpdkApp, WorkerContext};
-use dpdk_net_tonic::{DpdkGrpcChannel, serve};
+use dpdk_net_util::tonic::{DpdkGrpcChannel, serve};
+use dpdk_net_util::{DpdkApp, WorkerContext};
 
 use smoltcp::wire::Ipv4Address;
 use tonic::{Request, Response, Status};

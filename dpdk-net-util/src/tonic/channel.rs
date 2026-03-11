@@ -1,6 +1,6 @@
 //! `!Send` gRPC channel backed by a persistent HTTP/2 connection.
 //!
-//! [`DpdkGrpcChannel`] wraps [`dpdk_net_util::Connection`] (HTTP/2 only) and
+//! [`DpdkGrpcChannel`] wraps [`crate::Connection`] (HTTP/2 only) and
 //! implements `tower::Service<Request<tonic::body::Body>>`, satisfying tonic's
 //! [`GrpcService`](tonic::client::GrpcService) trait via blanket impl.
 //!
@@ -9,9 +9,10 @@
 use std::task::{Context, Poll};
 
 use dpdk_net::runtime::ReactorHandle;
-use dpdk_net_util::{Connection, ResponseFuture};
 use http::Uri;
 use http::uri::{Authority, Scheme};
+
+use crate::{Connection, Error, ResponseFuture};
 
 /// A `!Send` gRPC channel backed by a persistent HTTP/2 connection
 /// over dpdk-net transport.
@@ -33,12 +34,11 @@ impl DpdkGrpcChannel {
     /// Example: `http://192.168.1.1:50051`
     ///
     /// Establishes a TCP connection and completes the HTTP/2 handshake
-    /// using [`LocalExecutor`](dpdk_net_util::LocalExecutor) (no `Send`
-    /// required).
+    /// using [`LocalExecutor`](crate::LocalExecutor) (no `Send` required).
     ///
     /// Uses an ephemeral local port (`0`) and default buffer sizes
     /// (4096 bytes rx/tx).
-    pub async fn connect(reactor: &ReactorHandle, uri: Uri) -> Result<Self, dpdk_net_util::Error> {
+    pub async fn connect(reactor: &ReactorHandle, uri: Uri) -> Result<Self, Error> {
         Self::connect_with(reactor, uri, 0, 4096, 4096).await
     }
 
@@ -51,7 +51,7 @@ impl DpdkGrpcChannel {
         local_port: u16,
         rx_buffer: usize,
         tx_buffer: usize,
-    ) -> Result<Self, dpdk_net_util::Error> {
+    ) -> Result<Self, Error> {
         let scheme = uri.scheme().expect("URI must have a scheme").clone();
         let authority = uri.authority().expect("URI must have authority").clone();
         let addr: smoltcp::wire::IpAddress = authority
@@ -75,14 +75,14 @@ impl DpdkGrpcChannel {
 
 impl tower::Service<http::Request<tonic::body::Body>> for DpdkGrpcChannel {
     type Response = http::Response<hyper::body::Incoming>;
-    type Error = dpdk_net_util::Error;
+    type Error = Error;
     type Future = ResponseFuture;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if self.conn.is_ready() {
             Poll::Ready(Ok(()))
         } else {
-            Poll::Ready(Err(dpdk_net_util::Error::ConnectionNotReady))
+            Poll::Ready(Err(Error::ConnectionNotReady))
         }
     }
 

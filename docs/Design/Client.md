@@ -14,7 +14,7 @@ This document describes the HTTP client design for `dpdk-net`, addressing the `!
 - `Error` type — connection, handshake, and request errors
 
 ✅ **Tests:**
-- `dpdk-net-axum/tests/axum_client_test.rs` — `DpdkHttpClient` + axum server integration test
+- `dpdk-net-test/tests/axum_client_test.rs` — `DpdkHttpClient` + axum server integration test
 - Existing lower-level tests in `dpdk-net-test/tests/http_echo_test.rs`, `http2_echo_test.rs`, `http_auto_echo_test.rs`
 
 ### Module Structure
@@ -95,7 +95,7 @@ See: [pool.rs](../../dpdk-net-util/src/pool.rs)
 ## References
 
 - [Implementation: dpdk-net-util](../../dpdk-net-util/src/lib.rs)
-- [Test: axum_client_test.rs](../../dpdk-net-axum/tests/axum_client_test.rs)
+- [Test: axum_client_test.rs](../../dpdk-net-test/tests/axum_client_test.rs)
 - [hyper client module](https://docs.rs/hyper/latest/hyper/client/index.html)
 - [Lower-level HTTP tests](../../dpdk-net-test/tests/http_auto_echo_test.rs)
 - [Axum Integration Design](Axum.md)

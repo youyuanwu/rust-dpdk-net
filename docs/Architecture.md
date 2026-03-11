@@ -13,8 +13,8 @@ This document describes the architecture of the `dpdk-net` crate, a Rust library
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    Framework Layer                                  │
-│   dpdk-net-axum (serve) │ dpdk-net-tonic (serve, channel)           │
-│   dpdk-net-util (DpdkApp, WorkerContext, HTTP client)               │
+│   dpdk-net-util (DpdkApp, WorkerContext, HTTP client,               │
+│                  axum serve, tonic serve/channel)                    │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -64,7 +64,7 @@ This document describes the architecture of the `dpdk-net` crate, a Rust library
 
 ## Crate Structure
 
-The project is organized into six crates:
+The project is organized into four crates:
 
 ### 1. `dpdk-net-sys` - FFI Bindings
 
@@ -117,32 +117,12 @@ Shared utilities: `DpdkApp` (lcore-based application runner), `WorkerContext`, H
 | [pool.rs](../dpdk-net-util/src/pool.rs) | `ConnectionPool` - Per-host connection reuse |
 | [executor.rs](../dpdk-net-util/src/executor.rs) | `LocalExecutor` - `!Send` executor for hyper |
 | [bridge/](../dpdk-net-util/src/bridge/) | OS thread TCP bridge — `DpdkBridge`, `BridgeTcpStream`, `BridgeTcpListener` |
+| [axum/](../dpdk-net-util/src/axum/) | `serve()` — Axum Router on dpdk-net (feature: `axum`) |
+| [tonic/](../dpdk-net-util/src/tonic/) | `serve()` + `DpdkGrpcChannel` — gRPC support (feature: `tonic`) |
 
-Design: [App.md](Design/App.md), [Client.md](Design/Client.md), [OsThreadBridge.md](Design/OsThreadBridge.md)
+Design: [App.md](Design/App.md), [Client.md](Design/Client.md), [OsThreadBridge.md](Design/OsThreadBridge.md), [Axum.md](Design/Axum.md), [Tonic.md](Design/Tonic.md)
 
-### 4. `dpdk-net-axum` - Axum Web Framework Integration
-
-Serves axum `Router` on dpdk-net sockets, bypassing `axum::serve()` (which requires `Send`).
-
-| File | Purpose |
-|------|---------|---|
-| [serve.rs](../dpdk-net-axum/src/serve.rs) | `serve()` - Accept loop with `AutoBuilder` + `LocalExecutor` |
-
-Re-exports `DpdkApp`, `WorkerContext` from `dpdk-net-util`.  
-Design: [Axum.md](Design/Axum.md)
-
-### 5. `dpdk-net-tonic` - Tonic gRPC Integration
-
-gRPC server and client for dpdk-net, built on top of `dpdk-net-axum`.
-
-| File | Purpose |
-|------|---------|---|
-| [serve.rs](../dpdk-net-tonic/src/serve.rs) | `serve()` - Routes → axum Router → `dpdk_net_axum::serve()` |
-| [channel.rs](../dpdk-net-tonic/src/channel.rs) | `DpdkGrpcChannel` - `!Send` gRPC client channel over HTTP/2 |
-
-Design: [Tonic.md](Design/Tonic.md)
-
-### 6. `dpdk-net-test` - Test Harness & Examples
+### 4. `dpdk-net-test` - Test Harness & Examples
 
 Testing infrastructure and example servers.
 
@@ -526,8 +506,8 @@ Async tests use `DpdkApp` + `WorkerContext`. Manual tests use `create_test_conte
 
 | Test | Pattern | Description |
 |------|---------|-------------|
-| [app_echo_test.rs](../dpdk-net-axum/tests/app_echo_test.rs) | DpdkApp | Raw TCP echo via `DpdkApp` |
-| [axum_client_test.rs](../dpdk-net-axum/tests/axum_client_test.rs) | DpdkApp | Axum server + `DpdkHttpClient` |
+| [app_echo_test.rs](../dpdk-net-test/tests/app_echo_test.rs) | DpdkApp | Raw TCP echo via `DpdkApp` |
+| [axum_client_test.rs](../dpdk-net-test/tests/axum_client_test.rs) | DpdkApp | Axum server + `DpdkHttpClient` |
 | [tonic_grpc_test.rs](../dpdk-net-test/tests/tonic_grpc_test.rs) | DpdkApp | gRPC server + `DpdkGrpcChannel` client |
 | [tcp_echo_async_test.rs](../dpdk-net-test/tests/tcp_echo_async_test.rs) | DpdkApp | Async TCP echo with `EchoServer` |
 | [http_echo_test.rs](../dpdk-net-test/tests/http_echo_test.rs) | DpdkApp | HTTP/1.1 with hyper |
@@ -607,8 +587,8 @@ Meanwhile, Reactor::run() loop:
 | `smoltcp` | User-space TCP/IP stack |
 | `tokio` | Async runtime |
 | `hyper` / `hyper-util` | HTTP client/server |
-| `axum` | Web framework (dpdk-net-axum) |
-| `tonic` / `prost` | gRPC framework + protobuf (dpdk-net-tonic) |
+| `axum` | Web framework (dpdk-net-util, feature: `axum`) |
+| `tonic` / `prost` | gRPC framework + protobuf (dpdk-net-util, feature: `tonic`) |
 | `arrayvec` | Fixed-size stack-allocated vectors |
 | `arc-swap` | Lock-free atomic Arc operations |
 | `nix` | Unix system calls |

@@ -452,24 +452,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dpdk-net-axum"
-version = "0.1.0"
-dependencies = [
- "axum",
- "dpdk-net",
- "dpdk-net-test",
- "dpdk-net-util",
- "http-body-util",
- "hyper",
- "hyper-util",
- "serial_test",
- "smoltcp",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
 name = "dpdk-net-sys"
 version = "0.1.0"
 dependencies = [
@@ -483,11 +465,10 @@ name = "dpdk-net-test"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "axum",
  "clap",
  "ctrlc",
  "dpdk-net",
- "dpdk-net-axum",
- "dpdk-net-tonic",
  "dpdk-net-util",
  "http",
  "http-body-util",
@@ -510,33 +491,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "dpdk-net-tonic"
-version = "0.1.0"
-dependencies = [
- "dpdk-net",
- "dpdk-net-axum",
- "dpdk-net-test",
- "dpdk-net-util",
- "http",
- "hyper",
- "prost",
- "serial_test",
- "smoltcp",
- "tokio",
- "tonic",
- "tower",
- "tracing",
-]
-
-[[package]]
 name = "dpdk-net-util"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
+ "axum",
  "bytes",
  "dpdk-net",
  "dpdk-net-test",
  "futures-io",
+ "http",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -544,6 +508,8 @@ dependencies = [
  "smoltcp",
  "tokio",
  "tokio-util",
+ "tonic",
+ "tower",
  "tracing",
 ]
 

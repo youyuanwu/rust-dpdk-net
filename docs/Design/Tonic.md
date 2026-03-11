@@ -1,13 +1,13 @@
 # Tonic gRPC Integration Design
 
-gRPC support for dpdk-net via [tonic](https://github.com/hyperium/tonic). Built on top of `DpdkApp` and reuses `dpdk-net-axum` for the server side (see [Axum.md](Axum.md)).
+gRPC support for dpdk-net via [tonic](https://github.com/hyperium/tonic). Built on top of `DpdkApp` and reuses the axum module for the server side (see [Axum.md](Axum.md)).
 
-Crate: [`dpdk-net-tonic`](../../dpdk-net-tonic/src/)  
+Module: [`dpdk-net-util/src/tonic/`](../../dpdk-net-util/src/tonic/)  
 Test: [`tonic_grpc_test.rs`](../../dpdk-net-test/tests/tonic_grpc_test.rs)
 
 ## Server
 
-`dpdk_net_tonic::serve()` accepts `tonic::service::Routes`, converts via `.into_axum_router()`, and delegates to `dpdk_net_axum::serve()`. No separate server implementation — tonic services become an axum `Router`.
+`dpdk_net_util::tonic::serve()` accepts `tonic::service::Routes`, converts via `.into_axum_router()`, and delegates to `dpdk_net_util::axum::serve()`. No separate server implementation — tonic services become an axum `Router`.
 
 We bypass `tonic::transport::Server::serve()` which requires `Send` streams.
 
@@ -19,7 +19,7 @@ let listener = TcpListener::bind(&ctx.reactor, 50051, 4096, 4096).unwrap();
 serve(listener, routes, shutdown).await;
 ```
 
-Mixed REST + gRPC: call `.into_axum_router()` yourself, merge with axum routes, and use `dpdk_net_axum::serve()` directly.
+Mixed REST + gRPC: call `.into_axum_router()` yourself, merge with axum routes, and use `dpdk_net_util::axum::serve()` directly.
 
 ## Client
 

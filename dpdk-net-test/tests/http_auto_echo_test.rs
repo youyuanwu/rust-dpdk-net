@@ -11,8 +11,8 @@ use dpdk_net::api::rte::eal::EalBuilder;
 use dpdk_net::runtime::ReactorHandle;
 use dpdk_net::socket::{TcpListener, TcpStream};
 
-use dpdk_net_axum::{DpdkApp, WorkerContext};
 use dpdk_net_test::app::http_server::{HttpAutoServer, LocalExecutor, echo_service};
+use dpdk_net_util::{DpdkApp, WorkerContext};
 
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Incoming};

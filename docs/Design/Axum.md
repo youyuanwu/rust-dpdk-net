@@ -6,19 +6,19 @@ The axum integration is built **on top of `DpdkApp`** (see [App.md](App.md)). `D
 
 ## Implementation Status
 
-✅ **Implemented** in `dpdk-net-axum` crate:
+✅ **Implemented** in `dpdk-net-util` crate (feature: `axum`):
 - `serve()` function — accepts `TcpListener`, `Router`
 - Uses `AutoBuilder` from hyper-util with `LocalExecutor` from `dpdk-net-util`
 - Bridges axum's tower `Service` to hyper via `TowerToHyperService`
 - Auto-detects HTTP/1.1 and HTTP/2 (cleartext h2c)
-- Re-exported from `dpdk_net_axum::serve`
+- Available via `dpdk_net_util::axum::serve`
 
 🔲 **Not yet implemented:**
 - `serve_with_config()` / `ServeConfig` (HTTP/2 tuning, max connections)
 
 ✅ **Tests:**
-- `dpdk-net-axum/tests/axum_client_test.rs` — axum server + `DpdkHttpClient` GET requests on same lcore
-- `dpdk-net-axum/tests/app_echo_test.rs` — raw TCP echo test for `DpdkApp`
+- `dpdk-net-test/tests/axum_client_test.rs` — axum server + `DpdkHttpClient` GET requests on same lcore
+- `dpdk-net-test/tests/app_echo_test.rs` — raw TCP echo test for `DpdkApp`
 
 ---
 
@@ -42,7 +42,7 @@ The axum integration is built **on top of `DpdkApp`** (see [App.md](App.md)). `D
 
 **Key detail:** `serve_connection()` requires `I: Read + Write + Unpin + 'static` but does **not** require `Send` on `I`. Only `serve_connection_with_upgrades()` requires `Send`. This is why our `!Send` streams work.
 
-See: [serve.rs](../../dpdk-net-axum/src/serve.rs)
+See: [serve.rs](../../dpdk-net-util/src/axum/serve.rs)
 
 ---
 
@@ -74,7 +74,7 @@ DpdkApp::new()
 
 ## Limitations
 
-1. **Cannot use `axum::serve()` directly** — requires `Send` bounds. Use `dpdk_net_axum::serve()` instead.
+1. **Cannot use `axum::serve()` directly** — requires `Send` bounds. Use `dpdk_net_util::axum::serve()` instead.
 2. **Single-threaded per lcore** — connections are pinned to the lcore that received the SYN (via RSS hash).
 3. **Shared state must be `Send + Sync`** — each lcore is a separate OS thread. Use `Arc<AtomicU64>`, not `Rc<Cell<_>>`.
 4. **No WebSocket upgrade with task migration** — WebSocket connections stay on the same lcore.
@@ -87,16 +87,11 @@ DpdkApp::new()
 ```
 dpdk-net-util/
 ├── src/
-│   ├── app.rs         # DpdkApp builder and run logic
-│   └── context.rs     # WorkerContext definition
-
-dpdk-net-axum/
-├── src/
-│   ├── lib.rs         # Re-exports DpdkApp, WorkerContext from dpdk-net-util; exports serve
-│   └── serve.rs       # serve()
-└── tests/
-    ├── app_echo_test.rs       # Raw TCP echo test
-    └── axum_client_test.rs    # Axum server + HTTP client test
+│   ├── app.rs             # DpdkApp builder and run logic
+│   ├── context.rs         # WorkerContext definition
+│   └── axum/
+│       ├── mod.rs         # Re-exports serve
+│       └── serve.rs       # serve()
 ```
 
 No `tower` dependency needed — `hyper_util::service::TowerToHyperService` handles the bridging.
@@ -105,7 +100,7 @@ No `tower` dependency needed — `hyper_util::service::TowerToHyperService` hand
 
 ## Feature Comparison
 
-| Feature | `axum::serve` | `dpdk_net_axum::serve` |
+| Feature | `axum::serve` | `dpdk_net_util::axum::serve` |
 |---------|---------------|------------------------|
 | Router support | ✅ | ✅ |
 | Middleware | ✅ | ✅ |

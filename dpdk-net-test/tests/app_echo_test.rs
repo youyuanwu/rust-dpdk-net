@@ -7,7 +7,7 @@
 
 use dpdk_net::api::rte::eal::EalBuilder;
 use dpdk_net::socket::{TcpListener, TcpStream};
-use dpdk_net_axum::{DpdkApp, WorkerContext};
+use dpdk_net_util::{DpdkApp, WorkerContext};
 
 use smoltcp::wire::{IpAddress, Ipv4Address};
 
