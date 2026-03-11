@@ -23,6 +23,7 @@ serial_test = "3"
 nix = { version = "0.31", features = [] }
 tokio = { version = "1", default-features = false, features = [] }
 tokio-util = { version = "0.7", features = ["compat"] }
+futures-core = "0.3"
 futures-io = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -38,7 +39,7 @@ cc = "1.2"
 pkgconf = "0.2"
 
 axum = { version = "0.8", default-features = false, features = [] }
-tonic = { version = "0.14", default-features = false, features = ["codegen", "router"] }
+tonic = { version = "0.14", default-features = false, features = ["codegen", "router", "transport"] }
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
 prost = "0.14"
