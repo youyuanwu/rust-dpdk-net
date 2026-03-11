@@ -90,3 +90,17 @@ Each queue requires its own smoltcp interface with dedicated socket buffers. Wit
 ### Graceful Shutdown
 
 Closing connections during shutdown may not complete TCP's FIN handshake if the reactor stops polling before the connection fully closes.
+
+## OS Thread Bridge Limitations
+
+### Extra Copy Overhead
+
+The bridge relays data through `tokio::sync::mpsc` channels, adding one memcpy per direction. This adds ~1-5µs latency per hop. For maximum throughput, run code directly on lcores via `DpdkApp::run`.
+
+### No Zero-Copy
+
+Data is copied between `Bytes` buffers and DPDK mbufs. True zero-copy would require exposing mbuf lifetimes across threads, conflicting with DPDK's per-thread mempool caching.
+
+### Sequential Ephemeral Ports
+
+The bridge worker uses a simple sequential allocator (49152–65535) without reuse tracking. Under heavy churn, port exhaustion is possible.

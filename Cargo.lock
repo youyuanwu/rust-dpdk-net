@@ -532,9 +532,11 @@ dependencies = [
 name = "dpdk-net-util"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
  "bytes",
  "dpdk-net",
  "dpdk-net-test",
+ "futures-io",
  "http-body-util",
  "hyper",
  "hyper-util",

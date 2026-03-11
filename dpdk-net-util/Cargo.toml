@@ -8,13 +8,15 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+arc-swap.workspace = true
 bytes.workspace = true
 dpdk-net.workspace = true
+futures-io.workspace = true
 smoltcp.workspace = true
 hyper = { workspace = true, features = ["client", "http1", "http2"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 http-body-util.workspace = true
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 tokio-util.workspace = true
 tracing.workspace = true
 

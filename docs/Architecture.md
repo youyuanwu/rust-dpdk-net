@@ -106,7 +106,7 @@ The main library providing safe Rust abstractions over DPDK and smoltcp integrat
 
 ### 3. `dpdk-net-util` - Application Framework & HTTP Client
 
-Shared utilities: `DpdkApp` (lcore-based application runner), `WorkerContext`, HTTP client, and `LocalExecutor`.
+Shared utilities: `DpdkApp` (lcore-based application runner), `WorkerContext`, HTTP client, OS thread TCP bridge, and `LocalExecutor`.
 
 | File | Purpose |
 |------|---------|---|
@@ -116,8 +116,9 @@ Shared utilities: `DpdkApp` (lcore-based application runner), `WorkerContext`, H
 | [connection.rs](../dpdk-net-util/src/connection.rs) | `Connection` - Persistent HTTP/1.1 or HTTP/2 connection |
 | [pool.rs](../dpdk-net-util/src/pool.rs) | `ConnectionPool` - Per-host connection reuse |
 | [executor.rs](../dpdk-net-util/src/executor.rs) | `LocalExecutor` - `!Send` executor for hyper |
+| [bridge/](../dpdk-net-util/src/bridge/) | OS thread TCP bridge — `DpdkBridge`, `BridgeTcpStream`, `BridgeTcpListener` |
 
-Design: [App.md](Design/App.md), [Client.md](Design/Client.md)
+Design: [App.md](Design/App.md), [Client.md](Design/Client.md), [OsThreadBridge.md](Design/OsThreadBridge.md)
 
 ### 4. `dpdk-net-axum` - Axum Web Framework Integration
 
