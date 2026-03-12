@@ -1,16 +1,18 @@
 use bytes::Bytes;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{Notify, mpsc, oneshot};
 
 use arc_swap::ArcSwap;
 use dpdk_net::runtime::ReactorHandle;
-use dpdk_net::socket::{TcpListener, TcpStream};
+use dpdk_net::socket::{TcpListener, TcpStream, UdpSocket};
 
 use super::command::{BridgeCommand, BridgeStreamChannels};
 use super::error::BridgeError;
 use super::listener::BridgeTcpListener;
 use super::stream::BridgeTcpStream;
+use super::udp::{BridgeUdpSocket, UdpDatagram, from_smoltcp_endpoint, to_smoltcp_endpoint};
 
 /// Default channel capacity for data channels (OS ↔ lcore).
 const DATA_CHANNEL_SIZE: usize = 256;
@@ -21,9 +23,17 @@ const CMD_CHANNEL_SIZE: usize = 1024;
 /// Default channel capacity for the accept channel (listener → OS).
 const ACCEPT_CHANNEL_SIZE: usize = 64;
 
+/// Default channel capacity for UDP datagram channels (per direction).
+const UDP_CHANNEL_SIZE: usize = 1024;
+
 /// Default buffer sizes for TCP sockets created by the bridge.
 const RX_BUF_SIZE: usize = 65536;
 const TX_BUF_SIZE: usize = 65536;
+
+/// Default UDP socket buffer parameters.
+const UDP_RX_PACKETS: usize = 256;
+const UDP_TX_PACKETS: usize = 256;
+const UDP_MAX_PACKET_SIZE: usize = 1500;
 
 /// Shared registry that tracks which lcores are available.
 pub(crate) struct WorkerRegistry {
@@ -174,6 +184,40 @@ async fn bridge_worker(reactor: ReactorHandle, mut cmd_rx: mpsc::Receiver<Bridge
                 // Spawn accept loop — each accepted connection gets its own relay task
                 tokio::task::spawn_local(accept_loop(listener, accept_tx));
             }
+            BridgeCommand::BindUdp { port, reply_tx } => {
+                let socket = match UdpSocket::bind(
+                    &reactor,
+                    port,
+                    UDP_RX_PACKETS,
+                    UDP_TX_PACKETS,
+                    UDP_MAX_PACKET_SIZE,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let _ = reply_tx.send(Err(e.into()));
+                        continue;
+                    }
+                };
+
+                // Resolve local address from the reactor's IP config + bound port.
+                let local_ip = reactor.ip_addr().unwrap_or(smoltcp::wire::IpAddress::Ipv4(
+                    smoltcp::wire::Ipv4Address::UNSPECIFIED,
+                ));
+                let local_addr = SocketAddr::new(
+                    match local_ip {
+                        smoltcp::wire::IpAddress::Ipv4(v4) => IpAddr::V4(v4),
+                    },
+                    port,
+                );
+
+                let (tx_to_lcore, rx_from_os) = mpsc::channel(UDP_CHANNEL_SIZE);
+                let (tx_to_os, rx_from_lcore) = mpsc::channel(UDP_CHANNEL_SIZE);
+
+                let bridge_socket = BridgeUdpSocket::new(tx_to_lcore, rx_from_lcore, local_addr);
+                let _ = reply_tx.send(Ok(bridge_socket));
+
+                tokio::task::spawn_local(udp_relay_task(socket, rx_from_os, tx_to_os));
+            }
         }
     }
 }
@@ -258,6 +302,47 @@ async fn relay_task(
             _ = &mut close_rx => {
                 let _ = stream.close().await;
                 break;
+            }
+        }
+    }
+}
+
+/// Per-port UDP relay task. Runs on the lcore's `LocalSet`.
+///
+/// Owns the real `UdpSocket` (!Send) and shuttles datagrams between it and
+/// the Send channels connected to the OS thread's `BridgeUdpSocket`.
+async fn udp_relay_task(
+    socket: UdpSocket,
+    mut rx_from_os: mpsc::Receiver<UdpDatagram>,
+    tx_to_os: mpsc::Sender<UdpDatagram>,
+) {
+    let mut recv_buf = vec![0u8; UDP_MAX_PACKET_SIZE];
+
+    loop {
+        tokio::select! {
+            // Egress: OS thread → NIC
+            datagram = rx_from_os.recv() => {
+                let Some(dg) = datagram else { break }; // OS side dropped
+                let endpoint = to_smoltcp_endpoint(dg.addr);
+                // send_slice errors (Unaddressable, BufferFull) are silently dropped.
+                // The OS side already got Ok(len) when the datagram entered the channel.
+                let _ = socket.send_to(&dg.payload, endpoint).await;
+            }
+            // Ingress: NIC → OS thread
+            result = socket.recv_from(&mut recv_buf) => {
+                match result {
+                    Ok((len, metadata)) => {
+                        let dg = UdpDatagram {
+                            payload: Bytes::copy_from_slice(&recv_buf[..len]),
+                            addr: from_smoltcp_endpoint(metadata.endpoint),
+                        };
+                        // Drop on full — best-effort, consistent with UDP semantics.
+                        // Using try_send (not send.await) so ingress is never blocked
+                        // by a slow OS consumer.
+                        let _ = tx_to_os.try_send(dg);
+                    }
+                    Err(_) => continue, // transient recv error
+                }
             }
         }
     }

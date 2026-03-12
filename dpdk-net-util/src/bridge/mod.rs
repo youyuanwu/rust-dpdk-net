@@ -43,10 +43,12 @@ pub mod error;
 mod handle;
 mod listener;
 mod stream;
+mod udp;
 mod worker;
 
 pub use error::BridgeError;
 pub use handle::DpdkBridge;
 pub use listener::BridgeTcpListener;
 pub use stream::BridgeTcpStream;
+pub use udp::BridgeUdpSocket;
 pub use worker::BridgeWorkers;

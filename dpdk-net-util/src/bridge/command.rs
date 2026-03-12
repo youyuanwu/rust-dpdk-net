@@ -4,6 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::error::BridgeError;
 use super::listener::BridgeTcpListener;
+use super::udp::BridgeUdpSocket;
 
 /// Command sent from OS threads to an lcore bridge worker.
 pub(crate) enum BridgeCommand {
@@ -17,6 +18,11 @@ pub(crate) enum BridgeCommand {
     Listen {
         port: u16,
         reply_tx: oneshot::Sender<Result<BridgeTcpListener, BridgeError>>,
+    },
+    /// Bind a UDP socket on the DPDK stack.
+    BindUdp {
+        port: u16,
+        reply_tx: oneshot::Sender<Result<BridgeUdpSocket, BridgeError>>,
     },
 }
 

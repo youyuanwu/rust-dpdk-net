@@ -7,6 +7,7 @@ use super::command::BridgeCommand;
 use super::error::BridgeError;
 use super::listener::BridgeTcpListener;
 use super::stream::BridgeTcpStream;
+use super::udp::BridgeUdpSocket;
 use super::worker::{BridgeWorkers, WorkerRegistry};
 
 /// Handle for OS threads to request TCP connections through DPDK.
@@ -73,6 +74,22 @@ impl DpdkBridge {
 
         worker
             .send(BridgeCommand::Listen { port, reply_tx })
+            .await
+            .map_err(|_| BridgeError::Disconnected)?;
+
+        reply_rx.await.map_err(|_| BridgeError::Disconnected)?
+    }
+
+    /// Bind a UDP socket on the DPDK stack.
+    ///
+    /// Returns a `BridgeUdpSocket` that mirrors `tokio::net::UdpSocket` API.
+    pub async fn bind_udp(&self, port: u16) -> Result<BridgeUdpSocket, BridgeError> {
+        let worker = self.registry.select().ok_or(BridgeError::Disconnected)?;
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+
+        worker
+            .send(BridgeCommand::BindUdp { port, reply_tx })
             .await
             .map_err(|_| BridgeError::Disconnected)?;
 

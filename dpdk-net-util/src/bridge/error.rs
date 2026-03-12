@@ -14,6 +14,8 @@ pub enum BridgeError {
     Connect(smoltcp::socket::tcp::ConnectError),
     /// TCP listen error from smoltcp.
     Listen(smoltcp::socket::tcp::ListenError),
+    /// UDP bind error from smoltcp.
+    UdpBind(smoltcp::socket::udp::BindError),
 }
 
 impl fmt::Display for BridgeError {
@@ -24,6 +26,7 @@ impl fmt::Display for BridgeError {
             BridgeError::Io(e) => write!(f, "IO error: {e}"),
             BridgeError::Connect(e) => write!(f, "TCP connect error: {e}"),
             BridgeError::Listen(e) => write!(f, "TCP listen error: {e}"),
+            BridgeError::UdpBind(e) => write!(f, "UDP bind error: {e}"),
         }
     }
 }
@@ -34,6 +37,7 @@ impl std::error::Error for BridgeError {
             BridgeError::Io(e) => Some(e),
             BridgeError::Connect(e) => Some(e),
             BridgeError::Listen(e) => Some(e),
+            BridgeError::UdpBind(e) => Some(e),
             _ => None,
         }
     }
@@ -57,6 +61,12 @@ impl From<smoltcp::socket::tcp::ListenError> for BridgeError {
     }
 }
 
+impl From<smoltcp::socket::udp::BindError> for BridgeError {
+    fn from(e: smoltcp::socket::udp::BindError) -> Self {
+        BridgeError::UdpBind(e)
+    }
+}
+
 impl From<BridgeError> for io::Error {
     fn from(e: BridgeError) -> Self {
         match e {
@@ -71,6 +81,7 @@ impl From<BridgeError> for io::Error {
                 io::Error::new(io::ErrorKind::ConnectionRefused, e.to_string())
             }
             BridgeError::Listen(e) => io::Error::new(io::ErrorKind::AddrInUse, e.to_string()),
+            BridgeError::UdpBind(e) => io::Error::new(io::ErrorKind::AddrInUse, e.to_string()),
         }
     }
 }

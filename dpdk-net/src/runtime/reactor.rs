@@ -245,3 +245,13 @@ impl Reactor<DpdkDevice> {
 pub struct ReactorHandle {
     pub(crate) inner: Rc<RefCell<ReactorInner<DpdkDevice>>>,
 }
+
+impl ReactorHandle {
+    /// Get the first IP address assigned to this reactor's network interface.
+    ///
+    /// Returns `None` if no IP addresses are configured on the interface.
+    pub fn ip_addr(&self) -> Option<smoltcp::wire::IpAddress> {
+        let inner = self.inner.borrow();
+        inner.iface.ip_addrs().first().map(|cidr| cidr.address())
+    }
+}
