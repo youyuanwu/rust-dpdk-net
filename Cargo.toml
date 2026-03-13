@@ -33,6 +33,9 @@ hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
 socket2 = { version = "0.6", features = ["all"] }
 httparse = "1.10"
 kimojio = { version = "0.14", default-features = false }
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+quinn-udp = "0.5"
+rustls-pki-types = "1"
 
 bindgen = "0.72"
 cc = "1.2"

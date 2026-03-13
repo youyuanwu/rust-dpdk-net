@@ -12,6 +12,7 @@ default = []
 axum = ["dep:axum"]
 tonic = ["dep:tonic", "dep:http", "dep:tower", "dep:futures-core", "axum"]
 tonic-tls = ["tonic", "dep:tonic-tls"]
+quinn = ["dep:quinn", "dep:quinn-udp"]
 
 [dependencies]
 arc-swap.workspace = true
@@ -37,6 +38,10 @@ tower = { workspace = true, optional = true }
 
 # Optional: tonic-tls support
 tonic-tls = { workspace = true, optional = true }
+
+# Optional: quinn support
+quinn = { workspace = true, optional = true }
+quinn-udp = { workspace = true, optional = true }
 
 [dev-dependencies]
 dpdk-net-test.workspace = true

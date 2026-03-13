@@ -42,6 +42,8 @@ pub mod pool;
 
 #[cfg(feature = "axum")]
 pub mod axum;
+#[cfg(feature = "quinn")]
+pub mod quinn;
 #[cfg(feature = "tonic")]
 pub mod tonic;
 
