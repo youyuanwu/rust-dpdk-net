@@ -22,7 +22,7 @@ This enables building network applications (HTTP servers, proxies, etc.) that by
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Application Layer                            │
-│   (axum, tonic gRPC, hyper, TcpStream, TcpListener)                 │
+│   (axum, tonic gRPC, tonic-h3 gRPC/H3, hyper, TcpStream, UdpSocket)│
 └─────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -58,6 +58,8 @@ This enables building network applications (HTTP servers, proxies, etc.) that by
 - **Async/await support** - `TcpListener`, `TcpStream` with `futures_io::AsyncRead`/`AsyncWrite`; runtime-agnostic
 - **axum integration** - Serve axum `Router` directly on DPDK sockets (`dpdk-net-util` feature: `axum`)
 - **tonic gRPC** - gRPC server and client over DPDK (`dpdk-net-util` feature: `tonic`)
+- **QUIC ([Quinn](https://github.com/quinn-rs/quinn))** - Quinn endpoints over DPDK UDP sockets (`dpdk-net-util` feature: `quinn`)
+- **gRPC over HTTP/3** - [tonic-h3](https://github.com/youyuanwu/tonic-h3) gRPC via QUIC/H3 over DPDK
 - **HTTP client** - `DpdkHttpClient` for HTTP/1.1 and HTTP/2 requests (`dpdk-net-util`)
 - **Multi-queue scaling** - RSS (Receive Side Scaling) distributes connections across CPU cores
 - **DpdkApp framework** - Lcore-based application runner with per-queue smoltcp stacks
@@ -69,7 +71,7 @@ This enables building network applications (HTTP servers, proxies, etc.) that by
 |-------|-------------|
 | `dpdk-net` | Core library: DPDK wrappers, smoltcp integration, async TCP sockets |
 | `dpdk-net-sys` | FFI bindings to DPDK C library (generated via bindgen) |
-| `dpdk-net-util` | `DpdkApp`, `WorkerContext`, HTTP client, `LocalExecutor`, axum `serve()`, tonic `serve()` + `DpdkGrpcChannel` |
+| `dpdk-net-util` | `DpdkApp`, `WorkerContext`, HTTP client, `LocalExecutor`, axum `serve()`, tonic `serve()` + `DpdkGrpcChannel`, Quinn/QUIC adapter (`DpdkQuinnRuntime`) |
 | `dpdk-net-test` | Test harness, example servers, integration tests |
 
 ## Documentation

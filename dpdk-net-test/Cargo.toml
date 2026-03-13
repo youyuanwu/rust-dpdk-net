@@ -38,3 +38,4 @@ rcgen.workspace = true
 openssl.workspace = true
 quinn.workspace = true
 rustls-pki-types.workspace = true
+tonic-h3.workspace = true

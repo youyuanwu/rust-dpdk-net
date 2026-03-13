@@ -49,6 +49,7 @@ prost = "0.14"
 http = "1"
 tower = { version = "0.5", default-features = false }
 tonic-tls = { version = "0.7.1", default-features = false, features = ["openssl"] }
+tonic-h3 = { version = "0.0.5", default-features = false, features = ["quinn"] }
 openssl = "0.10"
 rcgen = "0.14"
 
