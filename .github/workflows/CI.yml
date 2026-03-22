@@ -5,11 +5,20 @@ on: [push, pull_request]
 jobs:
   dpdk:
     runs-on: ubuntu-latest
+    outputs:
+      rust-min: '1.91.0'
+      rust-max: ${{ steps.rust-version.outputs.channel }}
     env:
       SCCACHE_GHA_ENABLED: "true"
       # maybe ninja dpdk auto detects sccache?
     steps:
     - uses: actions/checkout@v6
+
+    - name: Read rust version from toolchain
+      id: rust-version
+      run: |
+        CHANNEL=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+        echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
 
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.9
@@ -52,7 +61,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest ]
-        rust: [ 1.91.0, 1.94.0 ]
+        rust:
+          - ${{ needs.dpdk.outputs.rust-min }}
+          - ${{ needs.dpdk.outputs.rust-max }}
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -90,21 +101,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y ./build/dpdk-net_*.deb
 
-    - name: Build release binaries
-      if: matrix.rust == '1.94.0'
-      run: |
-        cargo +${{ matrix.rust }} build --release --bin dpdk-bench-server --bin dpdk-bench-client
-
-    - name: Upload bench binaries artifact
-      if: matrix.rust == '1.94.0'
-      uses: actions/upload-artifact@v4
-      with:
-        name: bench-binaries
-        path: |
-          target/release/dpdk-bench-server
-          target/release/dpdk-bench-client
-        if-no-files-found: error
-
     - name: Run cargo check
       run: cargo +${{ matrix.rust }} check --all-targets
 
@@ -116,6 +112,57 @@ jobs:
     
     - name: Run cargo test
       run: cargo +${{ matrix.rust }} test --all -- --nocapture
+
+  release:
+    needs: dpdk
+    runs-on: ubuntu-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.9
+      with:
+        version: "v0.10.0"
+
+    - name: Remove toolchain file
+      run: rm -f rust-toolchain.toml
+
+    - name: Install rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ needs.dpdk.outputs.rust-max }}
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
+
+    - uses: taiki-e/install-action@protoc
+
+    - name: Download DPDK deb artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: dpdk-deb
+        path: build/
+
+    - name: Install DPDK deb
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ./build/dpdk-net_*.deb
+
+    - name: Build release binaries
+      run: cargo build --release --bin dpdk-bench-server --bin dpdk-bench-client
+
+    - name: Upload bench binaries artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: bench-binaries
+        path: |
+          target/release/dpdk-bench-server
+          target/release/dpdk-bench-client
+        if-no-files-found: error
 
   e2e:
     # No 'needs: build' - runs in parallel, waits for artifacts via polling
@@ -235,8 +282,8 @@ jobs:
             exit 0
           fi
 
-          # Check if dpdk or build jobs failed
-          JOBS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name == "dpdk" or (.name | contains("build"))) | .name + "=" + (.conclusion // "pending")' 2>/dev/null || echo "")
+          # Check if dpdk or release jobs failed
+          JOBS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name == "dpdk" or .name == "release") | .name + "=" + (.conclusion // "pending")' 2>/dev/null || echo "")
           if echo "$JOBS" | grep -qE '=(failure|cancelled)'; then
             echo "A required job failed or was cancelled!"
             echo "$JOBS"
