@@ -1,13 +1,13 @@
 //! [`BridgeTransport`] — `tonic_tls::Transport` for TLS client connections
-//! over [`DpdkBridge`].
+//! over [`DpdkBridge`](dpdk_net_util::DpdkBridge).
 
+use dpdk_net_util::{BridgeError, DpdkBridge};
 use http::Uri;
 use smoltcp::wire::IpAddress;
 
 use super::super::io::BridgeIo;
-use crate::{BridgeError, DpdkBridge};
 
-/// Transport that produces [`BridgeIo`] connections via [`DpdkBridge`].
+/// Transport that produces [`BridgeIo`] connections via [`DpdkBridge`](dpdk_net_util::DpdkBridge).
 ///
 /// Implements [`tonic_tls::Transport`] so it can be passed to
 /// `tonic_tls::openssl::TlsConnector::new(transport, ssl_connector, domain)`.

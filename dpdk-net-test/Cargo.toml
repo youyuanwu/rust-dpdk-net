@@ -31,7 +31,8 @@ tonic-prost-build.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
-dpdk-net-util = { workspace = true, features = ["tonic", "tonic-tls", "quinn"] }
+dpdk-net-util = { workspace = true, features = ["quinn"] }
+dpdk-net-tonic = { workspace = true, features = ["tls"] }
 http.workspace = true
 axum.workspace = true
 rcgen.workspace = true

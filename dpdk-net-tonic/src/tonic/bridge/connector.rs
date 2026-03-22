@@ -1,4 +1,4 @@
-//! [`BridgeConnector`] — tonic client connector over [`DpdkBridge`].
+//! [`BridgeConnector`] — tonic client connector over [`DpdkBridge`](dpdk_net_util::DpdkBridge).
 //!
 //! Implements `tower::Service<Uri>` so it can be passed to
 //! `tonic::transport::Endpoint::connect_with_connector()`.
@@ -7,16 +7,14 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use dpdk_net_util::{BridgeError, DpdkBridge};
 use http::Uri;
-use smoltcp::wire::IpAddress;
-
 use hyper_util::rt::TokioIo;
-
-use crate::{BridgeError, DpdkBridge};
+use smoltcp::wire::IpAddress;
 
 use super::io::BridgeIo;
 
-/// Connector that establishes TCP connections via [`DpdkBridge`].
+/// Connector that establishes TCP connections via [`DpdkBridge`](dpdk_net_util::DpdkBridge).
 ///
 /// Pass to [`tonic::transport::Endpoint::connect_with_connector()`]
 /// to get a standard `tonic::transport::Channel` backed by DPDK.

@@ -6,7 +6,7 @@
 
 use dpdk_net::api::rte::eal::EalBuilder;
 use dpdk_net::socket::TcpListener;
-use dpdk_net_util::tonic::{DpdkGrpcChannel, serve};
+use dpdk_net_tonic::tonic::{DpdkGrpcChannel, serve};
 use dpdk_net_util::{DpdkApp, WorkerContext};
 
 use smoltcp::wire::Ipv4Address;

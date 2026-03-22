@@ -9,16 +9,12 @@ license.workspace = true
 
 [features]
 default = []
-axum = ["dep:axum"]
-tonic = ["dep:tonic", "dep:http", "dep:tower", "dep:futures-core", "axum"]
-tonic-tls = ["tonic", "dep:tonic-tls"]
 quinn = ["dep:quinn", "dep:quinn-udp"]
 
 [dependencies]
 arc-swap.workspace = true
 bytes.workspace = true
 dpdk-net.workspace = true
-futures-core = { workspace = true, optional = true }
 futures-io.workspace = true
 smoltcp.workspace = true
 hyper = { workspace = true, features = ["client", "http1", "http2"] }
@@ -27,17 +23,6 @@ http-body-util.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 tokio-util.workspace = true
 tracing.workspace = true
-
-# Optional: axum support
-axum = { workspace = true, optional = true }
-
-# Optional: tonic support
-tonic = { workspace = true, optional = true }
-http = { workspace = true, optional = true }
-tower = { workspace = true, optional = true }
-
-# Optional: tonic-tls support
-tonic-tls = { workspace = true, optional = true }
 
 # Optional: quinn support
 quinn = { workspace = true, optional = true }

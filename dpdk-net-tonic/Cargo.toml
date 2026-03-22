@@ -1,0 +1,30 @@
+[package]
+name = "dpdk-net-tonic"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+tls = ["dep:tonic-tls"]
+
+[dependencies]
+axum.workspace = true
+dpdk-net.workspace = true
+dpdk-net-util.workspace = true
+futures-core.workspace = true
+http.workspace = true
+hyper.workspace = true
+hyper-util = { workspace = true, features = ["tokio", "server-auto", "service"] }
+smoltcp.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tonic.workspace = true
+tower.workspace = true
+tracing.workspace = true
+
+# Optional: tonic-tls support
+tonic-tls = { workspace = true, optional = true }

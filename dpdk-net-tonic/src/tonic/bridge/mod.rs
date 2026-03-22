@@ -1,6 +1,6 @@
 //! OS Thread Bridge adapters for tonic gRPC.
 //!
-//! Provides types that adapt [`DpdkBridge`](crate::DpdkBridge) streams
+//! Provides types that adapt [`DpdkBridge`](dpdk_net_util::DpdkBridge) streams
 //! for use with tonic's native `transport` APIs:
 //!
 //! - [`BridgeIo`] — IO adapter with [`Connected`](tonic::transport::server::Connected) trait
@@ -11,7 +11,7 @@
 mod connector;
 mod incoming;
 mod io;
-#[cfg(feature = "tonic-tls")]
+#[cfg(feature = "tls")]
 pub mod tls;
 
 pub use connector::BridgeConnector;

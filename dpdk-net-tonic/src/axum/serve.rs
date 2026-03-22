@@ -14,6 +14,7 @@
 
 use axum::Router;
 use dpdk_net::socket::TcpListener;
+use dpdk_net_util::LocalExecutor;
 use hyper_util::rt::TokioIo;
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use hyper_util::service::TowerToHyperService;
@@ -21,8 +22,6 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, error, info};
 
 use std::future::Future;
-
-use crate::LocalExecutor;
 
 /// Serve an axum [`Router`] on a dpdk-net [`TcpListener`].
 ///
@@ -36,7 +35,7 @@ use crate::LocalExecutor;
 ///
 /// ```ignore
 /// use dpdk_net_util::{DpdkApp, WorkerContext};
-/// use dpdk_net_util::axum::serve;
+/// use dpdk_net_tonic::axum::serve;
 /// use dpdk_net::socket::TcpListener;
 /// use axum::{Router, routing::get};
 /// use smoltcp::wire::Ipv4Address;

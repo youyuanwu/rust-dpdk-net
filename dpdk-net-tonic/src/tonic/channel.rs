@@ -1,6 +1,6 @@
 //! `!Send` gRPC channel backed by a persistent HTTP/2 connection.
 //!
-//! [`DpdkGrpcChannel`] wraps [`crate::Connection`] (HTTP/2 only) and
+//! [`DpdkGrpcChannel`] wraps [`dpdk_net_util::Connection`] (HTTP/2 only) and
 //! implements `tower::Service<Request<tonic::body::Body>>`, satisfying tonic's
 //! [`GrpcService`](tonic::client::GrpcService) trait via blanket impl.
 //!
@@ -9,10 +9,9 @@
 use std::task::{Context, Poll};
 
 use dpdk_net::runtime::ReactorHandle;
+use dpdk_net_util::{Connection, Error, ResponseFuture};
 use http::Uri;
 use http::uri::{Authority, Scheme};
-
-use crate::{Connection, Error, ResponseFuture};
 
 /// A `!Send` gRPC channel backed by a persistent HTTP/2 connection
 /// over dpdk-net transport.
@@ -34,7 +33,7 @@ impl DpdkGrpcChannel {
     /// Example: `http://192.168.1.1:50051`
     ///
     /// Establishes a TCP connection and completes the HTTP/2 handshake
-    /// using [`LocalExecutor`](crate::LocalExecutor) (no `Send` required).
+    /// using [`LocalExecutor`](dpdk_net_util::LocalExecutor) (no `Send` required).
     ///
     /// Uses an ephemeral local port (`0`) and default buffer sizes
     /// (4096 bytes rx/tx).

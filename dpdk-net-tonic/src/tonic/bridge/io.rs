@@ -1,4 +1,4 @@
-//! [`BridgeIo`] — tonic-compatible IO adapter for [`BridgeTcpStream`].
+//! [`BridgeIo`] — tonic-compatible IO adapter for [`BridgeTcpStream`](dpdk_net_util::BridgeTcpStream).
 //!
 //! Wraps `Compat<BridgeTcpStream>` to add the [`Connected`] trait
 //! required by tonic's `serve_with_incoming_shutdown` and
@@ -8,10 +8,9 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use dpdk_net_util::BridgeTcpStream;
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt};
 use tonic::transport::server::Connected;
-
-use crate::BridgeTcpStream;
 
 /// Bridge TCP stream adapted for tonic transport.
 ///
@@ -21,7 +20,7 @@ pub struct BridgeIo {
 }
 
 impl BridgeIo {
-    /// Wrap a [`BridgeTcpStream`] for use with tonic transport.
+    /// Wrap a [`BridgeTcpStream`](dpdk_net_util::BridgeTcpStream) for use with tonic transport.
     pub fn new(stream: BridgeTcpStream) -> Self {
         Self {
             inner: stream.compat(),

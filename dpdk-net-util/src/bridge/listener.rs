@@ -7,7 +7,8 @@ use super::stream::BridgeTcpStream;
 ///
 /// Accepted connections are returned as [`BridgeTcpStream`]s.
 pub struct BridgeTcpListener {
-    pub(crate) accept_rx: mpsc::Receiver<Result<BridgeTcpStream, BridgeError>>,
+    /// Channel receiver for accepted connections.
+    pub accept_rx: mpsc::Receiver<Result<BridgeTcpStream, BridgeError>>,
 }
 
 impl BridgeTcpListener {

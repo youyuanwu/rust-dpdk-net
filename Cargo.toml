@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "dpdk-net", "dpdk-net-util", "dpdk-net-sys",
+  "dpdk-net", "dpdk-net-util", "dpdk-net-tonic", "dpdk-net-sys",
   "dpdk-net-test",
   "tests/dpdk-bench-client",
   "tests/dpdk-bench-server",
@@ -56,5 +56,6 @@ rcgen = "0.14"
 # crate in this workspace
 dpdk-net = { path = "dpdk-net", version = "0.1.0" }
 dpdk-net-util = { path = "dpdk-net-util", version = "0.1.0" }
+dpdk-net-tonic = { path = "dpdk-net-tonic", version = "0.1.0" }
 dpdk-net-sys = { path = "dpdk-net-sys", version = "0.1.0" }
 dpdk-net-test = { path = "dpdk-net-test" }

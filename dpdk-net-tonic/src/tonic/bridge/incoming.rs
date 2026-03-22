@@ -4,15 +4,14 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use dpdk_net_util::{BridgeError, BridgeTcpListener};
 use futures_core::Stream;
-
-use crate::{BridgeError, BridgeTcpListener};
 
 use super::io::BridgeIo;
 
 /// Stream of incoming bridge connections, adapted for tonic transport.
 ///
-/// Wraps [`BridgeTcpListener`] and implements
+/// Wraps [`BridgeTcpListener`](dpdk_net_util::BridgeTcpListener) and implements
 /// `Stream<Item = Result<BridgeIo, BridgeError>>`.
 ///
 /// Pass to `tonic::transport::Server::builder().add_service(...).serve_with_incoming_shutdown()`.

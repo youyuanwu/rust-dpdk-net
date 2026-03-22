@@ -40,12 +40,8 @@ pub mod error;
 pub mod executor;
 pub mod pool;
 
-#[cfg(feature = "axum")]
-pub mod axum;
 #[cfg(feature = "quinn")]
 pub mod quinn;
-#[cfg(feature = "tonic")]
-pub mod tonic;
 
 pub use app::DpdkApp;
 pub use bridge::{BridgeError, BridgeTcpListener, BridgeTcpStream, BridgeWorkers, DpdkBridge};

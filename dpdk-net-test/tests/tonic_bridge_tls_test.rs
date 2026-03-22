@@ -4,8 +4,8 @@
 //! `tonic_tls::openssl`. Certificates are self-signed via `rcgen`.
 
 use dpdk_net::api::rte::eal::EalBuilder;
-use dpdk_net_util::tonic::bridge::BridgeIncoming;
-use dpdk_net_util::tonic::bridge::tls::BridgeTransport;
+use dpdk_net_tonic::tonic::bridge::BridgeIncoming;
+use dpdk_net_tonic::tonic::bridge::tls::BridgeTransport;
 use dpdk_net_util::{DpdkApp, DpdkBridge, WorkerContext};
 
 use openssl::pkey::PKey;

@@ -9,7 +9,7 @@ use axum::routing::get;
 
 use dpdk_net::api::rte::eal::EalBuilder;
 use dpdk_net::socket::TcpListener;
-use dpdk_net_util::axum::serve;
+use dpdk_net_tonic::axum::serve;
 use dpdk_net_util::{DpdkApp, DpdkHttpClient, WorkerContext};
 
 use http_body_util::BodyExt;

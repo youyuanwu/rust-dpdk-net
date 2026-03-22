@@ -6,7 +6,7 @@
 //! The DPDK lcore only provides bridge workers.
 
 use dpdk_net::api::rte::eal::EalBuilder;
-use dpdk_net_util::tonic::bridge::{BridgeConnector, BridgeIncoming};
+use dpdk_net_tonic::tonic::bridge::{BridgeConnector, BridgeIncoming};
 use dpdk_net_util::{DpdkApp, DpdkBridge, WorkerContext};
 
 use smoltcp::wire::Ipv4Address;
