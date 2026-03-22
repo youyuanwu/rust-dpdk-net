@@ -1,6 +1,10 @@
 name: build
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 */12 * * *'
 
 jobs:
   dpdk:
@@ -48,7 +52,7 @@ jobs:
         sudo cmake --build build --target dpdk_deb
 
     - name: Upload DPDK deb artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: dpdk-deb
         path: build/dpdk-net_*.deb
@@ -84,14 +88,10 @@ jobs:
         toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
 
-    - uses: Swatinem/rust-cache@v2
-      with:
-        save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
-
     - uses: taiki-e/install-action@protoc
 
     - name: Download DPDK deb artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: dpdk-deb
         path: build/
@@ -135,14 +135,10 @@ jobs:
       with:
         toolchain: ${{ needs.dpdk.outputs.rust-max }}
 
-    - uses: Swatinem/rust-cache@v2
-      with:
-        save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
-
     - uses: taiki-e/install-action@protoc
 
     - name: Download DPDK deb artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: dpdk-deb
         path: build/
@@ -156,7 +152,7 @@ jobs:
       run: cargo build --release --bin dpdk-bench-server --bin dpdk-bench-client
 
     - name: Upload bench binaries artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: bench-binaries
         path: |
@@ -179,7 +175,7 @@ jobs:
           cloud-image-utils ansible jq
 
     - name: Install Terraform
-      uses: hashicorp/setup-terraform@v3
+      uses: hashicorp/setup-terraform@v4
       with:
         terraform_version: "1.14.4"
 
@@ -297,13 +293,13 @@ jobs:
         exit 1
 
     - name: Download DPDK deb artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: dpdk-deb
         path: build/
 
     - name: Download bench binaries artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: bench-binaries
         path: target/release/
