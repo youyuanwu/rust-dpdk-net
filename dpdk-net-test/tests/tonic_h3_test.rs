@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use dpdk_net::api::rte::eal::EalBuilder;
-use dpdk_net_util::quinn::DpdkQuinnRuntime;
+use dpdk_net_quinn::DpdkQuinnRuntime;
 use dpdk_net_util::{DpdkApp, DpdkBridge, WorkerContext};
 use quinn::EndpointConfig;
 use rcgen::{CertifiedKey, generate_simple_self_signed};

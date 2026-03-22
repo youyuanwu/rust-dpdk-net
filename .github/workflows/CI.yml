@@ -3,17 +3,59 @@ name: build
 on: [push, pull_request]
 
 jobs:
+  dpdk:
+    runs-on: ubuntu-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      # maybe ninja dpdk auto detects sccache?
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.9
+      with:
+        version: "v0.10.0"
+
+    - name: Install cmake
+      uses: lukka/get-cmake@latest
+      with:
+        cmakeVersion: "~3.29.0" # Use version 3.29.x
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev
+
+    - name: Build and install dpdk
+      run: |
+        cmake -S . -B build
+        cmake --build build --target dpdk_configure
+        cmake --build build --target dpdk_build --parallel
+        sudo cmake --build build --target dpdk_install
+
+    - name: Build DPDK deb package
+      # sudo needed: meson install writes to /usr/local log dir even with DESTDIR staging
+      run: |
+        sudo cmake --build build --target dpdk_deb
+
+    - name: Upload DPDK deb artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dpdk-deb
+        path: build/dpdk-net_*.deb
+        if-no-files-found: error
+
   build:
+    needs: dpdk
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest ]
-        rust: [ 1.90.0, 1.94.0 ]
+        rust: [ 1.91.0, 1.94.0 ]
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
-      # maybe ninja dpdk auto detects sccache?
     steps:
     - uses: actions/checkout@v6
 
@@ -35,44 +77,24 @@ jobs:
       with:
         save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
 
-    - name: Install cmake
-      uses: lukka/get-cmake@latest
-      with:
-        cmakeVersion: "~3.29.0" # Use version 3.29.x
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev
-
     - uses: taiki-e/install-action@protoc
 
-    - name: Build and install dpdk
-      run: |
-        cmake -S . -B build
-        cmake --build build --target dpdk_configure
-        cmake --build build --target dpdk_build --parallel
-        sudo cmake --build build --target dpdk_install
+    - name: Download DPDK deb artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: dpdk-deb
+        path: build/
 
-    - name: Build DPDK deb package
-      # sudo needed: meson install writes to /usr/local log dir even with DESTDIR staging
-      if: matrix.rust == '1.94.0'
+    - name: Install DPDK deb
       run: |
-        sudo cmake --build build --target dpdk_deb
+        sudo apt-get update
+        sudo apt-get install -y ./build/dpdk-net_*.deb
 
     - name: Build release binaries
       if: matrix.rust == '1.94.0'
       run: |
         cargo +${{ matrix.rust }} build --release --bin dpdk-bench-server --bin dpdk-bench-client
 
-    - name: Upload DPDK deb artifact
-      if: matrix.rust == '1.94.0'
-      uses: actions/upload-artifact@v4
-      with:
-        name: dpdk-deb
-        path: build/dpdk-net_*.deb
-        if-no-files-found: error
-    
     - name: Upload bench binaries artifact
       if: matrix.rust == '1.94.0'
       uses: actions/upload-artifact@v4
@@ -207,20 +229,20 @@ jobs:
       run: |
         echo "Waiting for build artifacts to be ready..."
         for i in {1..120}; do
-          # Check if both artifacts exist
           ARTIFACTS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts --jq '.artifacts[].name' 2>/dev/null || echo "")
           if echo "$ARTIFACTS" | grep -q "dpdk-deb" && echo "$ARTIFACTS" | grep -q "bench-binaries"; then
             echo "All artifacts are ready!"
             exit 0
           fi
-          
-          # Check if build job failed
-          BUILD_STATUS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name | contains("build")) | select(.name | contains("1.93.0")) | .conclusion' 2>/dev/null | head -1)
-          if [ "$BUILD_STATUS" = "failure" ] || [ "$BUILD_STATUS" = "cancelled" ]; then
-            echo "Build job failed or was cancelled!"
+
+          # Check if dpdk or build jobs failed
+          JOBS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name == "dpdk" or (.name | contains("build"))) | .name + "=" + (.conclusion // "pending")' 2>/dev/null || echo "")
+          if echo "$JOBS" | grep -qE '=(failure|cancelled)'; then
+            echo "A required job failed or was cancelled!"
+            echo "$JOBS"
             exit 1
           fi
-          
+
           echo "Attempt $i/120: Waiting for artifacts... (found: $ARTIFACTS)"
           sleep 10
         done

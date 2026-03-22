@@ -40,9 +40,6 @@ pub mod error;
 pub mod executor;
 pub mod pool;
 
-#[cfg(feature = "quinn")]
-pub mod quinn;
-
 pub use app::DpdkApp;
 pub use bridge::{BridgeError, BridgeTcpListener, BridgeTcpStream, BridgeWorkers, DpdkBridge};
 pub use client::{ClientConfig, DpdkHttpClient};

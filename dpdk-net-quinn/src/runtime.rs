@@ -6,8 +6,9 @@ use std::time::Instant;
 
 use quinn::{AsyncTimer, AsyncUdpSocket, Runtime};
 
-use super::DpdkQuinnSocket;
-use crate::bridge::{BridgeError, DpdkBridge};
+use crate::DpdkQuinnSocket;
+use dpdk_net_util::bridge::BridgeUdpSocket;
+use dpdk_net_util::{BridgeError, DpdkBridge};
 
 /// Quinn [`Runtime`] backed by DPDK via [`DpdkBridge`].
 ///
@@ -43,7 +44,7 @@ impl DpdkQuinnRuntime {
         server_config: Option<quinn::ServerConfig>,
         port: u16,
     ) -> Result<quinn::Endpoint, BridgeError> {
-        let bridge_socket = self.bridge.bind_udp(port).await?;
+        let bridge_socket: BridgeUdpSocket = self.bridge.bind_udp(port).await?;
         let quinn_socket: Arc<dyn AsyncUdpSocket> = Arc::new(DpdkQuinnSocket::new(bridge_socket));
         let runtime: Arc<dyn Runtime> = Arc::new(self.clone());
         quinn::Endpoint::new_with_abstract_socket(config, server_config, quinn_socket, runtime)

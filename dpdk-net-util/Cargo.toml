@@ -7,10 +7,6 @@ documentation.workspace = true
 repository.workspace = true
 license.workspace = true
 
-[features]
-default = []
-quinn = ["dep:quinn", "dep:quinn-udp"]
-
 [dependencies]
 arc-swap.workspace = true
 bytes.workspace = true
@@ -23,10 +19,6 @@ http-body-util.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 tokio-util.workspace = true
 tracing.workspace = true
-
-# Optional: quinn support
-quinn = { workspace = true, optional = true }
-quinn-udp = { workspace = true, optional = true }
 
 [dev-dependencies]
 dpdk-net-test.workspace = true

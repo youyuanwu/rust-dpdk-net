@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "dpdk-net", "dpdk-net-util", "dpdk-net-tonic", "dpdk-net-sys",
+  "dpdk-net", "dpdk-net-util", "dpdk-net-tonic", "dpdk-net-quinn", "dpdk-net-sys",
   "dpdk-net-test",
   "tests/dpdk-bench-client",
   "tests/dpdk-bench-server",
@@ -13,11 +13,11 @@ package.repository = "https://github.com/youyuanwu/rust-dpdk-net"
 package.license = "MIT"
 
 [workspace.dependencies]
-arc-swap = "1.8"
+arc-swap = "1.9"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 ctrlc = { version = "3", features = ["termination"] }
-smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "async"] }
+smoltcp = { version = "0.13", default-features = false, features = ["std", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "async"] }
 arrayvec = "0.7"
 serial_test = "3"
 nix = { version = "0.31", features = [] }
@@ -32,9 +32,8 @@ http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
 socket2 = { version = "0.6", features = ["all"] }
 httparse = "1.10"
-kimojio = { version = "0.14", default-features = false }
+kimojio = { version = "0.15", default-features = false }
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
-quinn-udp = "0.5"
 rustls-pki-types = "1"
 
 bindgen = "0.72"
@@ -57,5 +56,6 @@ rcgen = "0.14"
 dpdk-net = { path = "dpdk-net", version = "0.1.0" }
 dpdk-net-util = { path = "dpdk-net-util", version = "0.1.0" }
 dpdk-net-tonic = { path = "dpdk-net-tonic", version = "0.1.0" }
+dpdk-net-quinn = { path = "dpdk-net-quinn", version = "0.1.0" }
 dpdk-net-sys = { path = "dpdk-net-sys", version = "0.1.0" }
 dpdk-net-test = { path = "dpdk-net-test" }

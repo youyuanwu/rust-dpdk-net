@@ -1,0 +1,13 @@
+[package]
+name = "dpdk-net-quinn"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+dpdk-net-util.workspace = true
+quinn.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }

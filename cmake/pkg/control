@@ -3,6 +3,6 @@ Version: 25.11.0
 Section: libs
 Priority: optional
 Architecture: amd64
-Depends: libc6, libnuma1, libelf1t64 | libelf1, libelf-dev, zlib1g, libzstd1, libssl3t64 | libssl3, libatomic1, rdma-core, libibverbs1, libibverbs-dev, libmlx5-1, librdmacm1, librdmacm-dev
+Depends: libc6, libnuma1, libnuma-dev, libelf1t64 | libelf1, libelf-dev, zlib1g, libzstd1, libssl3t64 | libssl3, libatomic1, rdma-core, libibverbs1, libibverbs-dev, libmlx5-1, librdmacm1, librdmacm-dev
 Maintainer: maintainer@example.com
 Description: Data Plane Development Kit with Mellanox mlx5 support (custom build for dpdk-net)

@@ -5,11 +5,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use quinn::udp::RecvMeta;
 use quinn::{AsyncUdpSocket, UdpPoller};
-use quinn_udp::RecvMeta;
 use tokio::io::ReadBuf;
 
-use crate::bridge::BridgeUdpSocket;
+use dpdk_net_util::bridge::BridgeUdpSocket;
 
 /// Quinn [`AsyncUdpSocket`] adapter over a [`BridgeUdpSocket`].
 ///
@@ -33,7 +33,7 @@ impl AsyncUdpSocket for DpdkQuinnSocket {
         Box::pin(DpdkUdpPoller { socket: self })
     }
 
-    fn try_send(&self, transmit: &quinn_udp::Transmit<'_>) -> io::Result<()> {
+    fn try_send(&self, transmit: &quinn::udp::Transmit<'_>) -> io::Result<()> {
         self.inner
             .try_send_to(transmit.contents, transmit.destination)?;
         Ok(())
