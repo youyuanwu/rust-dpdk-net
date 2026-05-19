@@ -17,3 +17,6 @@ futures-io.workspace = true
 dpdk-net-sys.workspace = true
 tracing.workspace = true
 arc-swap.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.186"

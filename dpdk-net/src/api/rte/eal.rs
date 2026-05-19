@@ -333,6 +333,12 @@ impl Eal {
             .collect();
 
         let argc = args.len() as i32;
+        #[cfg(target_os = "linux")]
+        let mut argv: Vec<*mut libc::c_char> = args
+            .iter()
+            .map(|s| s.as_ptr() as *mut libc::c_char)
+            .collect();
+        #[cfg(not(target_os = "linux"))]
         let mut argv: Vec<*mut i8> = args.iter().map(|s| s.as_ptr() as *mut i8).collect();
         argv.push(std::ptr::null_mut());
 
@@ -379,7 +385,10 @@ where
         .map(|s| CString::new(s.as_ref()).expect("argument contains null byte"))
         .collect();
     let argc = args.len() as i32;
-    let mut argv: Vec<*mut i8> = args.iter().map(|s| s.as_ptr() as *mut i8).collect();
+    let mut argv: Vec<*mut libc::c_char> = args
+        .iter()
+        .map(|s| s.as_ptr() as *mut libc::c_char)
+        .collect();
     argv.push(std::ptr::null_mut());
     let ret = unsafe { dpdk_net_sys::ffi::rte_eal_init(argc, argv.as_mut_ptr()) };
     check_rte_success(ret)
