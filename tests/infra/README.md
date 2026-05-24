@@ -40,6 +40,16 @@ Intra-VNet traffic (10.0.0.0/16) is always allowed via a separate
 If your IP changes, just re-run the deployment with the new value —
 only the NSG rule will update.
 
+## Deploy ARM64 VM (Cobalt 100)
+
+Pass an ARM size (`Standard_D{2,4,8,16,32,48,64,96}ps_v6`) as `vm1Size` /
+`vm2Size`. The template auto-selects the `server-arm64` Ubuntu image
+when an ARM size is chosen — no other changes needed.
+
+```sh
+--parameters vm1Size=Standard_D8ps_v6
+```
+
 ## Deploy Single VM with 2 NICs (for DPDK)
 
 ```sh
