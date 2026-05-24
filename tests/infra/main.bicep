@@ -43,6 +43,11 @@ param enableAutoShutdown bool = true
 @description('Auto-shutdown time (24h format, e.g., 1900)')
 param shutdownTime string = '1900'
 
+@description('CIDR(s) allowed to reach SSH (22) and DPDK test port (8080). Pass your public IP as ["1.2.3.4/32"]. Default ["*"] opens these ports to the internet.')
+param allowedSourceAddressPrefixes array = [
+  '*'
+]
+
 // Naming
 var vnetName = '${baseName}-vnet'
 var nsgName = '${baseName}-nsg'
@@ -73,7 +78,7 @@ resource nsgRuleSsh 'Microsoft.Network/networkSecurityGroups/securityRules@2024-
     protocol: 'TCP'
     sourcePortRange: '*'
     destinationPortRange: '22'
-    sourceAddressPrefix: '*'
+    sourceAddressPrefixes: allowedSourceAddressPrefixes
     destinationAddressPrefix: '*'
     access: 'Allow'
     priority: 300
@@ -103,7 +108,7 @@ resource nsgRuleDpdk 'Microsoft.Network/networkSecurityGroups/securityRules@2024
     protocol: 'TCP'
     sourcePortRange: '*'
     destinationPortRange: '8080'
-    sourceAddressPrefix: '*'
+    sourceAddressPrefixes: allowedSourceAddressPrefixes
     destinationAddressPrefix: '*'
     access: 'Allow'
     priority: 310
