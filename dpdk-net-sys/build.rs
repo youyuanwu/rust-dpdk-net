@@ -41,9 +41,20 @@ fn generate_bindings(include_dirs: &[PathBuf]) {
     for path in include_dirs {
         cc_builder.include(path);
     }
-    // Use corei7/Nehalem for QEMU software emulation compatibility
-    // This matches DPDK's cpu_instruction_set=generic setting
-    cc_builder.flag("-march=corei7");
+    // Match DPDK's cpu_instruction_set=generic setting. On x86_64, that maps to
+    // corei7/Nehalem (for QEMU software emulation compatibility); on aarch64
+    // the generic baseline is armv8-a. Other architectures fall through with
+    // no -march flag.
+    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    match target_arch.as_str() {
+        "x86_64" => {
+            cc_builder.flag("-march=corei7");
+        }
+        "aarch64" => {
+            cc_builder.flag("-march=armv8-a");
+        }
+        _ => {}
+    }
     cc_builder.compile("dpdk_wrapper");
 
     // Start with include paths from pkg-config

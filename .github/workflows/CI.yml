@@ -37,19 +37,22 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev
+        sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev libssl-dev pkgconf clang
 
-    - name: Build and install dpdk
+    - name: Build dpdk
       run: |
         cmake -S . -B build
         cmake --build build --target dpdk_configure
         cmake --build build --target dpdk_build --parallel
-        sudo cmake --build build --target dpdk_install
 
     - name: Build DPDK deb package
       # sudo needed: meson install writes to /usr/local log dir even with DESTDIR staging
       run: |
         sudo cmake --build build --target dpdk_deb
+
+    - name: Install DPDK from deb
+      run: |
+        sudo cmake --build build --target dpdk_install
 
     - name: Upload DPDK deb artifact
       uses: actions/upload-artifact@v6

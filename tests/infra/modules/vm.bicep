@@ -40,6 +40,11 @@ param privateIpAddress2 string = ''
 @description('Second public IP resource ID (used when nicCount=2)')
 param publicIpId2 string = ''
 
+// Auto-select Ubuntu image SKU: ARM (Dpsv6 Cobalt 100, etc.) gets
+// the 'server-arm64' image; x86 sizes get the standard 'server' image.
+var isArm = contains(vmSize, 'ps_v') || contains(vmSize, 'pls_v')
+var imageSku = isArm ? 'server-arm64' : 'server'
+
 // Primary NIC
 resource nic1 'Microsoft.Network/networkInterfaces@2024-07-01' = {
   name: '${vmName}-nic1'
@@ -99,7 +104,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-11-01' = {
       imageReference: {
         publisher: 'canonical'
         offer: 'ubuntu-24_04-lts'
-        sku: 'server'
+        sku: imageSku
         version: 'latest'
       }
       osDisk: {

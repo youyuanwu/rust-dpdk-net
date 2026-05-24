@@ -1,0 +1,104 @@
+name: build-arm
+
+# ARM64 build-only gate. Verifies the workspace compiles on aarch64.
+# Tests, release binaries, and e2e are intentionally skipped until the
+# ARM toolchain path is proven stable. Once stable, fold this into
+# CI.yml as a matrix on `os`.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  dpdk-arm:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      rust-max: ${{ steps.rust-version.outputs.channel }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Read rust version from toolchain
+      id: rust-version
+      run: |
+        CHANNEL=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+        echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.9
+      with:
+        version: "v0.10.0"
+
+    - name: Install cmake
+      uses: lukka/get-cmake@latest
+      with:
+        cmakeVersion: "~3.29.0"
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev libssl-dev pkgconf clang
+
+    - name: Build dpdk
+      run: |
+        cmake -S . -B build
+        cmake --build build --target dpdk_configure
+        cmake --build build --target dpdk_build --parallel
+
+    - name: Build DPDK deb package
+      run: |
+        sudo cmake --build build --target dpdk_deb
+
+    - name: Install DPDK from deb
+      run: |
+        sudo cmake --build build --target dpdk_install
+
+    - name: Upload DPDK deb artifact (arm64)
+      uses: actions/upload-artifact@v6
+      with:
+        name: dpdk-deb-arm64
+        path: build/dpdk-net_*.deb
+        if-no-files-found: error
+
+  build-arm:
+    needs: dpdk-arm
+    runs-on: ubuntu-24.04-arm
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.9
+      with:
+        version: "v0.10.0"
+
+    - name: Remove toolchain file
+      run: rm -f rust-toolchain.toml
+
+    - name: Install rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ needs.dpdk-arm.outputs.rust-max }}
+        components: clippy
+
+    - uses: taiki-e/install-action@protoc
+
+    - name: Download DPDK deb artifact (arm64)
+      uses: actions/download-artifact@v8
+      with:
+        name: dpdk-deb-arm64
+        path: build/
+
+    - name: Install DPDK deb
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ./build/dpdk-net_*.deb
+
+    - name: Run cargo check
+      run: cargo check --all-targets
+
+    - name: Run cargo clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings

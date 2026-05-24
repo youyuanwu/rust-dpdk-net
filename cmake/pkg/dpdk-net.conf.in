@@ -7,4 +7,4 @@
 #
 # This file sorts before spdk.conf alphabetically (dpdk-net < spdk),
 # ensuring our full DPDK install at /usr/local takes priority.
-/usr/local/lib/x86_64-linux-gnu
+/usr/local/lib/@DEB_MULTIARCH@

@@ -68,6 +68,51 @@ FetchContent_MakeAvailable(dpdk)
 message(STATUS "DPDK source code fetched to: ${dpdk_SOURCE_DIR}")
 message(STATUS "DPDK build directory: ${dpdk_BINARY_DIR}")
 
+# Detect Debian package architecture (amd64, arm64, ...) for naming the .deb
+# and stamping the Architecture: field in the control file.
+find_program(DPKG_EXECUTABLE dpkg)
+if(DPKG_EXECUTABLE)
+  execute_process(
+    COMMAND ${DPKG_EXECUTABLE} --print-architecture
+    OUTPUT_VARIABLE DPDK_DEB_ARCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+endif()
+if(NOT DPDK_DEB_ARCH)
+  # Fallback mapping from CMake host processor to Debian arch
+  if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+    set(DPDK_DEB_ARCH "amd64")
+  elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+    set(DPDK_DEB_ARCH "arm64")
+  else()
+    message(FATAL_ERROR "Unsupported host architecture for .deb packaging: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
+  endif()
+endif()
+
+# Detect the GNU multiarch triplet (e.g. x86_64-linux-gnu, aarch64-linux-gnu)
+# used in /usr/local/lib/<triplet>/{pkgconfig,...} so the post-install env
+# scripts point at the right directory for the host architecture.
+find_program(DPKG_ARCHITECTURE_EXECUTABLE dpkg-architecture)
+if(DPKG_ARCHITECTURE_EXECUTABLE)
+  execute_process(
+    COMMAND ${DPKG_ARCHITECTURE_EXECUTABLE} -qDEB_HOST_MULTIARCH
+    OUTPUT_VARIABLE DPDK_DEB_MULTIARCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+endif()
+if(NOT DPDK_DEB_MULTIARCH)
+  if(DPDK_DEB_ARCH STREQUAL "amd64")
+    set(DPDK_DEB_MULTIARCH "x86_64-linux-gnu")
+  elseif(DPDK_DEB_ARCH STREQUAL "arm64")
+    set(DPDK_DEB_MULTIARCH "aarch64-linux-gnu")
+  else()
+    message(FATAL_ERROR "Cannot determine GNU multiarch triplet for ${DPDK_DEB_ARCH}")
+  endif()
+endif()
+
+message(STATUS "DPDK .deb architecture: ${DPDK_DEB_ARCH} (multiarch: ${DPDK_DEB_MULTIARCH})")
+set(DPDK_DEB_FILE "${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_25.11.0_${DPDK_DEB_ARCH}.deb")
+
 # Add custom target to configure DPDK with meson
 # Uses cpu_instruction_set=generic (corei7/Nehalem) for compatibility with QEMU software emulation
 # Uses release build type for optimized binaries
@@ -103,7 +148,7 @@ add_custom_target(dpdk_build
 
 # Add custom target to install DPDK from deb package
 add_custom_target(dpdk_install
-  COMMAND apt install -y ${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_25.11.0_amd64.deb
+  COMMAND apt install -y ${DPDK_DEB_FILE}
   # update the shared library cache
   COMMAND ldconfig
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -125,7 +170,7 @@ add_custom_target(dpdk_uninstall
 add_custom_target(dpdk_clean
   COMMAND ninja -C ${dpdk_BINARY_DIR} clean
   COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg
-  COMMAND ${CMAKE_COMMAND} -E remove -f ${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_25.11.0_amd64.deb
+  COMMAND ${CMAKE_COMMAND} -E remove -f ${DPDK_DEB_FILE}
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Cleaning DPDK build artifacts and deb package"
   VERBATIM
@@ -136,9 +181,11 @@ add_custom_target(dpdk_clean
 # Skips if deb file already exists
 add_custom_target(dpdk_deb
   COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/dpdk_deb.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_25.11.0_amd64.deb
+    ${DPDK_DEB_FILE}
     ${CMAKE_CURRENT_BINARY_DIR}/dpdk-pkg
     ${dpdk_BINARY_DIR}
+    ${DPDK_DEB_ARCH}
+    ${DPDK_DEB_MULTIARCH}
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Creating DPDK .deb package (staged, no system install)"
   # DEPENDS dpdk_build
