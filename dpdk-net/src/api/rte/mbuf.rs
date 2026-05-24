@@ -94,7 +94,7 @@ impl Mbuf {
         if ptr.is_null() || len == 0 {
             &[]
         } else {
-            unsafe { slice::from_raw_parts(ptr as *const u8, len) }
+            unsafe { slice::from_raw_parts(ptr.cast::<u8>(), len) }
         }
     }
 
@@ -106,7 +106,7 @@ impl Mbuf {
         if ptr.is_null() || len == 0 {
             &mut []
         } else {
-            unsafe { slice::from_raw_parts_mut(ptr as *mut u8, len) }
+            unsafe { slice::from_raw_parts_mut(ptr.cast::<u8>(), len) }
         }
     }
 
@@ -123,7 +123,7 @@ impl Mbuf {
         if ptr.is_null() {
             None
         } else {
-            Some(unsafe { slice::from_raw_parts_mut(ptr as *mut u8, len) })
+            Some(unsafe { slice::from_raw_parts_mut(ptr.cast::<u8>(), len) })
         }
     }
 
@@ -140,7 +140,7 @@ impl Mbuf {
         if ptr.is_null() {
             None
         } else {
-            Some(unsafe { slice::from_raw_parts_mut(ptr as *mut u8, len) })
+            Some(unsafe { slice::from_raw_parts_mut(ptr.cast::<u8>(), len) })
         }
     }
 

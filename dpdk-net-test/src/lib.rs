@@ -108,7 +108,7 @@ pub mod util {
         unsafe {
             std::ptr::copy_nonoverlapping(
                 ifname_bytes.as_ptr(),
-                ifr.ifr_name.as_mut_ptr() as *mut u8,
+                ifr.ifr_name.as_mut_ptr().cast::<u8>(),
                 ifname_bytes.len(),
             );
         }
