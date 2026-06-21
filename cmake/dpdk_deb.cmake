@@ -11,12 +11,16 @@ set(PKG_DIR "${CMAKE_ARGV4}")
 set(DPDK_BUILD_DIR "${CMAKE_ARGV5}")
 set(DEB_ARCH "${CMAKE_ARGV6}")
 set(DEB_MULTIARCH "${CMAKE_ARGV7}")
+set(DPDK_VERSION "${CMAKE_ARGV8}")
 
 if(NOT DEB_ARCH)
   message(FATAL_ERROR "deb architecture argument is required")
 endif()
 if(NOT DEB_MULTIARCH)
   message(FATAL_ERROR "deb multiarch triplet argument is required")
+endif()
+if(NOT DPDK_VERSION)
+  message(FATAL_ERROR "dpdk version argument is required")
 endif()
 
 # Check if deb already exists

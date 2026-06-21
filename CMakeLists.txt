@@ -56,11 +56,14 @@ endif()
 
 include(FetchContent)
 
+# DPDK release version used for source fetch, .deb naming, and packaging metadata.
+set(DPDK_VERSION "25.11.2")
+
 message(STATUS "Fetching DPDK source code...")
 FetchContent_Declare(
   dpdk
   GIT_REPOSITORY https://github.com/DPDK/dpdk.git
-  GIT_TAG        ed957165eadbe60a47d5ec223578cdd1c13d0bd9 # v25.11.0
+  GIT_TAG        27757d03e981a1946434e9bf4c9cfb1ab7e03546 # v25.11.2
   GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(dpdk)
@@ -111,7 +114,7 @@ if(NOT DPDK_DEB_MULTIARCH)
 endif()
 
 message(STATUS "DPDK .deb architecture: ${DPDK_DEB_ARCH} (multiarch: ${DPDK_DEB_MULTIARCH})")
-set(DPDK_DEB_FILE "${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_25.11.0_${DPDK_DEB_ARCH}.deb")
+set(DPDK_DEB_FILE "${CMAKE_CURRENT_BINARY_DIR}/dpdk-net_${DPDK_VERSION}_${DPDK_DEB_ARCH}.deb")
 
 # Add custom target to configure DPDK with meson
 # Uses cpu_instruction_set=generic (corei7/Nehalem) for compatibility with QEMU software emulation
@@ -186,6 +189,7 @@ add_custom_target(dpdk_deb
     ${dpdk_BINARY_DIR}
     ${DPDK_DEB_ARCH}
     ${DPDK_DEB_MULTIARCH}
+    ${DPDK_VERSION}
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Creating DPDK .deb package (staged, no system install)"
   # DEPENDS dpdk_build

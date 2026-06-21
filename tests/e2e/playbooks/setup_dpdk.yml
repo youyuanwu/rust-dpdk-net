@@ -7,9 +7,9 @@
   vars:
     # playbook_dir is tests/e2e/playbooks, go up 3 levels to project root
     project_root: "{{ playbook_dir }}/../../../"
-    dpdk_deb_local: "{{ project_root }}/build/dpdk-net_25.11.0_amd64.deb"
-    dpdk_deb_remote: /tmp/dpdk-net_25.11.0_amd64.deb
-    dpdk_version: "25.11.0"
+    dpdk_deb_local: "{{ project_root }}/build/dpdk-net_25.11.2_amd64.deb"
+    dpdk_deb_remote: /tmp/dpdk-net_25.11.2_amd64.deb
+    dpdk_version: "25.11.2"
     dpdk_pkg_name: "dpdk-net"
 
   tasks:

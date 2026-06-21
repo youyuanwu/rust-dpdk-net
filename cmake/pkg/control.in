@@ -1,5 +1,5 @@
 Package: dpdk-net
-Version: 25.11.0
+Version: @DPDK_VERSION@
 Section: libs
 Priority: optional
 Architecture: @DEB_ARCH@
