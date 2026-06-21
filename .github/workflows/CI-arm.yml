@@ -38,7 +38,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev libssl-dev pkgconf clang
+        sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev libssl-dev pkgconf clang lld
 
     - name: Build dpdk
       run: |
@@ -95,7 +95,7 @@ jobs:
     - name: Install DPDK deb
       run: |
         sudo apt-get update
-        sudo apt-get install -y ./build/dpdk-net_*.deb
+        sudo apt-get install -y lld ./build/dpdk-net_*.deb
 
     - name: Run cargo check
       run: cargo check --all-targets
