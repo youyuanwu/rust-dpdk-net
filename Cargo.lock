@@ -1173,11 +1173,10 @@ dependencies = [
 
 [[package]]
 name = "kimojio"
-version = "0.16.6"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f07840b44fca806e3cbe052281d195c258233b0f048de95b1c59eba39a97f94"
+checksum = "7a8c994450de6ca400e314d2aeac42156c81cd833fe8f05cef2a7e4adcf40cad"
 dependencies = [
- "foreign-types-shared",
  "futures",
  "impls",
  "intrusive-collections",
@@ -1194,9 +1193,9 @@ dependencies = [
 
 [[package]]
 name = "kimojio-macros"
-version = "0.16.6"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93a07ec7e4abd9a8adf5b8e89d1dc987999bb53c7058f4d527a21b86d842292a"
+checksum = "66e6b7673312d1510674114bf095b7e68f35c82d0ab7f47d579614d1e2ed4aec"
 dependencies = [
  "quote",
  "syn",
