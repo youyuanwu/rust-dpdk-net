@@ -55,7 +55,7 @@ jobs:
         sudo cmake --build build --target dpdk_install
 
     - name: Upload DPDK deb artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: dpdk-deb
         path: build/dpdk-net_*.deb
@@ -155,7 +155,7 @@ jobs:
       run: cargo build --release --bin dpdk-bench-server --bin dpdk-bench-client
 
     - name: Upload bench binaries artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: bench-binaries
         path: |

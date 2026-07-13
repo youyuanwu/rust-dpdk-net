@@ -55,7 +55,7 @@ jobs:
         sudo cmake --build build --target dpdk_install
 
     - name: Upload DPDK deb artifact (arm64)
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: dpdk-deb-arm64
         path: build/dpdk-net_*.deb
