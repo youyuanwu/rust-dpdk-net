@@ -16,7 +16,7 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
       # maybe ninja dpdk auto detects sccache?
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Read rust version from toolchain
       id: rust-version
@@ -75,7 +75,7 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.9
@@ -123,7 +123,7 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.9
@@ -167,7 +167,7 @@ jobs:
     # No 'needs: build' - runs in parallel, waits for artifacts via polling
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Install libvirt and QEMU
       run: |
