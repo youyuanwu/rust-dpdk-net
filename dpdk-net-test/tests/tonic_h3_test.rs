@@ -149,7 +149,7 @@ fn test_tonic_h3_grpc() {
                     "localhost".to_string(),
                     client_endpoint.clone(),
                 );
-                let channel = tonic_h3::H3Channel::new(connector, uri);
+                let channel = tonic_h3::H3Channel::new(connector, uri, None);
                 let mut client = greeter::greeter_client::GreeterClient::new(channel);
 
                 let response = client
