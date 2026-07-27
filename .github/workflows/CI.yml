@@ -10,7 +10,7 @@ jobs:
   dpdk:
     runs-on: ubuntu-latest
     outputs:
-      rust-min: '1.91.0'
+      rust-min: '1.93.1'
       rust-max: ${{ steps.rust-version.outputs.channel }}
     env:
       SCCACHE_GHA_ENABLED: "true"
