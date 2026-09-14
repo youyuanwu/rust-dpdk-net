@@ -36,7 +36,7 @@ kimojio = { version = "0.17", default-features = false }
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 rustls-pki-types = "1"
 
-bindgen = "0.72"
+bindgen = "0.73"
 cc = "1.2"
 pkgconf = "0.2"
 
