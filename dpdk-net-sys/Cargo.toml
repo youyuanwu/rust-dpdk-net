@@ -10,6 +10,9 @@ readme = "README.md"
 description = "DPDK ffi for dpdk-net"
 include = ["build.rs", "include/**", "src/**", "README.md", "LICENSE"]
 
+[lib]
+doctest = false
+
 [dependencies]
 
 [build-dependencies]
