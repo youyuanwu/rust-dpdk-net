@@ -9,6 +9,9 @@ on:
   push:
   pull_request:
 
+env:
+  LIBCLANG_PATH: /usr/lib/llvm-21/lib
+
 jobs:
   dpdk-arm:
     runs-on: ubuntu-26.04-arm
@@ -21,7 +24,7 @@ jobs:
     - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang lld
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf libclang-dev lld
 
     - name: Verify DPDK dependencies
       run: ./scripts/check-deps.sh
@@ -44,7 +47,7 @@ jobs:
     - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang lld
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf libclang-dev lld
 
     - name: Run cargo check
       run: cargo check --all-targets

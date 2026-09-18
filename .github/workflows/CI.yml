@@ -6,6 +6,9 @@ on:
   schedule:
     - cron: '0 */12 * * *'
 
+env:
+  LIBCLANG_PATH: /usr/lib/llvm-21/lib
+
 jobs:
   dpdk:
     runs-on: ubuntu-26.04
@@ -18,7 +21,7 @@ jobs:
     - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf libclang-dev
 
     - name: Verify DPDK dependencies
       run: ./scripts/check-deps.sh
@@ -41,7 +44,7 @@ jobs:
     - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf libclang-dev
 
     - name: Run cargo check
       run: cargo check --all-targets
@@ -68,7 +71,7 @@ jobs:
     - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf libclang-dev
 
     - name: Build release binaries
       run: cargo build --release --bin dpdk-bench-server --bin dpdk-bench-client
