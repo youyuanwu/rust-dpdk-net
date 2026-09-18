@@ -139,7 +139,7 @@ The `inventory_local.py` script dynamically discovers VM IPs from libvirt DHCP l
 ### Install Required Packages
 ```bash
 # Host requirements (Ubuntu/Debian)
-sudo apt install -y qemu-kvm libvirt-daemon-system \
+sudo apt install -y qemu-system-x86 libvirt-daemon-system \
   libvirt-clients libvirt-dev bridge-utils virtinst \
   qemu-utils cloud-image-utils terraform
 ```

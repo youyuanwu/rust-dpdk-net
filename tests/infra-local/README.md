@@ -15,7 +15,7 @@ Terraform configuration for provisioning QEMU/KVM virtual machines for DPDK test
 
 1. **Install QEMU/KVM and libvirt:**
    ```bash
-   sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients libvirt-dev virtinst qemu-utils
+   sudo apt install -y qemu-system-x86 libvirt-daemon-system libvirt-clients libvirt-dev virtinst qemu-utils
    ```
 
 2. **Add user to libvirt group:**
