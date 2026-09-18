@@ -92,7 +92,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          qemu-kvm libvirt-daemon-system libvirt-clients \
+          qemu-system-x86 libvirt-daemon-system libvirt-clients \
           libvirt-dev bridge-utils virtinst qemu-utils \
           cloud-image-utils ansible jq
 
