@@ -9,22 +9,13 @@ on:
 jobs:
   dpdk:
     runs-on: ubuntu-26.04
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
     steps:
     - uses: actions/checkout@v7
-
-    - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.11
-      with:
-        version: "v0.10.0"
 
     - name: Install rust
       uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
         toolchain: "1.98.1"
-        cache: false
 
     - name: Install Ubuntu DPDK
       run: |
@@ -46,16 +37,8 @@ jobs:
         rust:
           - "1.93.1"
           - "1.98.1"
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
     steps:
     - uses: actions/checkout@v7
-
-    - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.11
-      with:
-        version: "v0.10.0"
 
     - name: Remove toolchain file
       run: rm -f rust-toolchain.toml
@@ -65,7 +48,6 @@ jobs:
       with:
         toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
-        cache: false
 
     - uses: taiki-e/install-action@protoc
 
@@ -88,16 +70,8 @@ jobs:
 
   release:
     runs-on: ubuntu-26.04
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
     steps:
     - uses: actions/checkout@v7
-
-    - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.11
-      with:
-        version: "v0.10.0"
 
     - name: Remove toolchain file
       run: rm -f rust-toolchain.toml
@@ -106,7 +80,6 @@ jobs:
       uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
         toolchain: "1.98.1"
-        cache: false
 
     - uses: taiki-e/install-action@protoc
 
