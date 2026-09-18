@@ -6,7 +6,7 @@ This document describes the local VM-based testing framework using Terraform and
 
 **✅ Implemented:**
 - Terraform configuration with libvirt provider (~> 0.9)
-- Two Ubuntu 24.04 VMs with dual NICs (virtio-net)
+- Two Ubuntu 26.04 VMs with dual NICs (virtio-net)
 - Dual network topology (management + DPDK)
 - Hugepages configuration (10 x 2MB per VM)
 - Cloud-init for minimal VM setup (SSH user, hugepages, network)
@@ -120,8 +120,7 @@ Cloud-init performs only essential setup to keep VM boot fast:
 
 **Not done by cloud-init (deferred to Ansible):**
 - Package installation (apt update/install)
-- DPDK build dependencies
-- DPDK compilation and installation
+- Ubuntu DPDK package installation
 
 ## Ansible Integration
 
@@ -140,7 +139,7 @@ The `inventory_local.py` script dynamically discovers VM IPs from libvirt DHCP l
 ### Install Required Packages
 ```bash
 # Host requirements (Ubuntu/Debian)
-sudo apt install -y qemu-kvm libvirt-daemon-system \
+sudo apt install -y qemu-system-x86 libvirt-daemon-system \
   libvirt-clients libvirt-dev bridge-utils virtinst \
   qemu-utils cloud-image-utils terraform
 ```
@@ -291,12 +290,12 @@ DPDK_NIC="0000:00:04.0"
 ### Base Image Volume
 ```hcl
 resource "libvirt_volume" "base_image" {
-  name = "dpdk-base-ubuntu-24.04.qcow2"
+  name = "dpdk-base-ubuntu-26.04.qcow2"
   pool = var.storage_pool
 
   create = {
     content = {
-      url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+      url = "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img"
     }
   }
 }
@@ -721,7 +720,7 @@ find_program(TERRAFORM_EXECUTABLE terraform REQUIRED)
 add_custom_target(local_vm_image
   COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/download-image.sh
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  COMMENT "Downloading Ubuntu 24.04 cloud image"
+  COMMENT "Downloading Ubuntu 26.04 cloud image"
 )
 
 # Initialize Terraform
@@ -1144,7 +1143,7 @@ cmake --build . --target local_vm_full
 
 | Target | Description |
 |--------|-------------|
-| `local_vm_image` | Download Ubuntu 24.04 cloud image |
+| `local_vm_image` | Download Ubuntu 26.04 cloud image |
 | `local_vm_init` | Initialize Terraform |
 | `local_vm_plan` | Plan deployment (dry-run) |
 | `local_vm_deploy` | Deploy VMs and export outputs |
@@ -1172,7 +1171,7 @@ The local VM targets mirror the Azure targets:
 |---------|---------------|--------------------------|
 | Provider | Azure | libvirt/QEMU |
 | Network | VNet + NSG | libvirt NAT + isolated |
-| VM Image | Ubuntu 24.04 | Ubuntu 24.04 cloud image |
+| VM Image | Ubuntu 24.04 | Ubuntu 26.04 cloud image |
 | Auth | SSH keys | SSH keys |
 | Management IPs | 10.0.0.0/24 | 192.168.122.0/24 (DHCP) |
 | DPDK IPs | 10.0.0.0/24 (same) | 10.0.1.0/24 (isolated) |
@@ -1188,7 +1187,7 @@ The local VM targets mirror the Azure targets:
 2. [x] `variables.tf` - Input variables (vm_count, memory, hugepages, etc.)
 3. [x] `main.tf` - Full VM configuration:
    - DPDK network via null_resource (dpdk-data-net)
-   - Base image volume (auto-download Ubuntu 24.04)
+   - Base image volume (auto-download Ubuntu 26.04)
    - VM disk volumes (overlay on base image)
    - Cloud-init with SSH user, hugepages, netplan
    - Two VM domains with dual NICs
@@ -1203,9 +1202,8 @@ The local VM targets mirror the Azure targets:
 12. [x] `tests/e2e/inventory_local.py` - Dynamic Ansible inventory for local VMs
 13. [x] `tests/e2e/run_tests.sh --local` - Run Ansible against local VMs
 14. [x] `.github/workflows/CI.yml` - E2E job with QEMU software emulation
+15. [x] `tests/e2e/playbooks/setup_dpdk.yml` - Install Ubuntu's DPDK packages
 
 ### 🔄 Future Work
 
-1. [ ] Playbook: Install DPDK build dependencies
-2. [ ] Playbook: Build and install DPDK
-3. [ ] Playbook: Run DPDK benchmark tests
+1. [ ] Expand DPDK benchmark coverage

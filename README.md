@@ -86,11 +86,31 @@ This enables building network applications (HTTP servers, proxies, etc.) that by
 - DPDK-compatible NIC (Intel, Mellanox, etc.) or virtual device for testing
 - Root privileges (for DPDK memory and device access)
 
+Run the dependency checker to see what is missing and how to install it:
+
+```sh
+./scripts/check-deps.sh            # build dependencies
+./scripts/check-deps.sh --runtime  # also check hugepages and root access
+./scripts/check-deps.sh --fix      # install missing packages via apt-get
+```
+
 ## Getting Started
 
 ### Install DPDK
 
-From package manager or build from source:
+On Ubuntu 26.04 (or newer) the distro packages match the version this project
+targets, so apt is the simplest option:
+
+```sh
+sudo apt-get install -y libdpdk-dev libjitterentropy3-dev
+```
+
+`libjitterentropy3-dev` is required because the build script reads DPDK's
+static pkg-config metadata, which reaches `libcrypto.pc`.
+`libcrypto.pc` references `libjitterentropy.a` without depending on the package
+that ships it.
+
+Alternatively, build DPDK from source:
 
 ```sh
 cmake -S . -B build

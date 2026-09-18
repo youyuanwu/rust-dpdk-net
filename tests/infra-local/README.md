@@ -4,7 +4,7 @@ Terraform configuration for provisioning QEMU/KVM virtual machines for DPDK test
 
 ## Features
 
-- **2 Ubuntu 24.04 VMs** with dual NICs each
+- **2 Ubuntu 26.04 VMs** with dual NICs each
 - **Management network** (10.0.0.0/24) - SSH and normal socket traffic
 - **DPDK network** (10.0.1.0/24) - Isolated network for DPDK virtio PMD
 - **Hugepages** pre-configured for DPDK
@@ -15,7 +15,7 @@ Terraform configuration for provisioning QEMU/KVM virtual machines for DPDK test
 
 1. **Install QEMU/KVM and libvirt:**
    ```bash
-   sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients libvirt-dev virtinst qemu-utils
+   sudo apt install -y qemu-system-x86 libvirt-daemon-system libvirt-clients libvirt-dev virtinst qemu-utils
    ```
 
 2. **Add user to libvirt group:**

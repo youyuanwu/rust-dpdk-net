@@ -5,85 +5,30 @@
   become: true
   
   vars:
-    # playbook_dir is tests/e2e/playbooks, go up 3 levels to project root
-    project_root: "{{ playbook_dir }}/../../../"
-    dpdk_deb_local: "{{ project_root }}/build/dpdk-net_25.11.2_amd64.deb"
-    dpdk_deb_remote: /tmp/dpdk-net_25.11.2_amd64.deb
-    dpdk_version: "25.11.2"
-    dpdk_pkg_name: "dpdk-net"
+    dpdk_version: "25.11"
 
   tasks:
-    - name: Get local deb checksum
-      ansible.builtin.stat:
-        path: "{{ dpdk_deb_local }}"
-        checksum_algorithm: md5
-      register: local_deb
-      delegate_to: localhost
-      become: false
-
-    - name: Get remote deb checksum
-      ansible.builtin.stat:
-        path: "{{ dpdk_deb_remote }}"
-        checksum_algorithm: md5
-      register: remote_deb
-
-    - name: Determine if deb needs update
-      ansible.builtin.set_fact:
-        deb_needs_update: "{{ not remote_deb.stat.exists or (remote_deb.stat.checksum != local_deb.stat.checksum) }}"
-
-    - name: Copy DPDK deb to VM (if missing or hash mismatch)
-      ansible.builtin.copy:
-        src: "{{ dpdk_deb_local }}"
-        dest: "{{ dpdk_deb_remote }}"
-        mode: '0644'
-      when: deb_needs_update
-
-    - name: Install DPDK dependencies
-      ansible.builtin.apt:
-        name:
-          - libnuma1
-          - libelf1t64
-          - zlib1g
-          - libzstd1
-          - libssl3t64
-          - libatomic1
-          - rdma-core
-          - libibverbs1
-          - libmlx5-1
-          - librdmacm1
-        state: present
-        update_cache: true
-
-    - name: Remove old DPDK packages (if deb changed)
+    - name: Install Ubuntu DPDK
       ansible.builtin.apt:
         name:
           - dpdk
-          - dpdk-net
-        state: absent
-        purge: true
-      when: deb_needs_update
-      ignore_errors: true
-
-    - name: Install DPDK from deb
-      ansible.builtin.apt:
-        deb: "{{ dpdk_deb_remote }}"
+          - dpdk-dev
+          - pkgconf
         state: present
-      when: deb_needs_update
-
-    - name: Update shared library cache
-      ansible.builtin.command: ldconfig
-      when: deb_needs_update
+        update_cache: true
 
     - name: Verify DPDK installation
       ansible.builtin.shell: |
         echo "=== DPDK Package Info ==="
-        dpkg -l {{ dpdk_pkg_name }}
+        dpkg-query -W -f='${Package} ${Version}\n' dpdk dpdk-dev libdpdk-dev
+        test "$(pkg-config --modversion libdpdk | cut -d. -f1,2)" = "{{ dpdk_version }}"
         echo ""
         echo "=== DPDK Libraries ==="
-        ls -la /usr/local/lib/x86_64-linux-gnu/librte*.so.* 2>/dev/null | head -5 || echo "Libraries in different location"
+        ldconfig -p | grep librte | head -5
         echo ""
         echo "=== DPDK Binaries ==="
-        ls -la /usr/local/bin/dpdk-* 2>/dev/null | head -5 || echo "No binaries found in /usr/local/bin"
+        command -v dpdk-testpmd
+        command -v dpdk-devbind.py
       register: dpdk_info
       changed_when: false
 

@@ -13,23 +13,17 @@ fn main() {
     // Emit cargo metadata for linking (no_bundle=true for -sys crates)
     pkgconf::emit_cargo_metadata(&pkg.libs, true);
 
-    // Extract include paths from cflags for bindgen
-    let include_paths: Vec<PathBuf> = pkg
-        .cflags
-        .iter()
-        .filter_map(|flag| {
-            if let pkgconf::CompilerFlag::IncludePath(path) = flag {
-                Some(path.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
+    // Preserve every compiler flag reported by DPDK. In addition to include
+    // paths, distro packages require flags such as `-include rte_config.h`
+    // and architecture-specific feature flags when parsing public headers.
+    let cflags = pkgconf::PkgConfigParser::run_pkg_config_cflags(["libdpdk"], None)
+        .expect("Unable to read DPDK compiler flags");
+    let cflags: Vec<String> = cflags.split_whitespace().map(str::to_owned).collect();
 
-    generate_bindings(&include_paths);
+    generate_bindings(&cflags);
 }
 
-fn generate_bindings(include_dirs: &[PathBuf]) {
+fn generate_bindings(cflags: &[String]) {
     // Generate bindings using bindgen if needed
     // Generate the dpdk rust bindings.
     let outdir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
@@ -38,32 +32,13 @@ fn generate_bindings(include_dirs: &[PathBuf]) {
     let mut cc_builder = cc::Build::new();
     cc_builder.file("src/wrapper.c");
     cc_builder.include("include"); // For wrapper.h
-    for path in include_dirs {
-        cc_builder.include(path);
-    }
-    // Match DPDK's cpu_instruction_set=generic setting. On x86_64, that maps to
-    // corei7/Nehalem (for QEMU software emulation compatibility); on aarch64
-    // the generic baseline is armv8-a. Other architectures fall through with
-    // no -march flag.
-    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
-    match target_arch.as_str() {
-        "x86_64" => {
-            cc_builder.flag("-march=corei7");
-        }
-        "aarch64" => {
-            cc_builder.flag("-march=armv8-a");
-        }
-        _ => {}
+    for flag in cflags {
+        cc_builder.flag(flag);
     }
     cc_builder.compile("dpdk_wrapper");
 
-    // Start with include paths from pkg-config
-    let mut bgbuilder = bindgen::builder();
-    for path in include_dirs {
-        bgbuilder = bgbuilder.clang_arg(format!("-I{}", path.display()));
-    }
-
-    let bgbuilder = bgbuilder
+    let bgbuilder = bindgen::builder()
+        .clang_args(cflags)
         // generate all the wrapper functions defined in csrc/header.h
         .allowlist_function("rte_.*_")
         // allow our rust wrapper functions
