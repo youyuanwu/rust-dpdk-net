@@ -152,7 +152,6 @@
         - name: Start HTTP server in background
           ansible.builtin.shell: |
             cd /home/azureuser
-            export LD_LIBRARY_PATH=/usr/local/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
             ulimit -n 65535
             nohup {{ bench_server_remote }} {{ server_start_opts }} > /tmp/dpdk_bench_server.log 2>&1 &
             echo $!

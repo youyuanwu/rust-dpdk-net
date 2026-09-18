@@ -83,7 +83,7 @@ EOF
 
 # Base OS image volume (downloaded from URL)
 resource "libvirt_volume" "base_image" {
-  name = "dpdk-base-ubuntu-24.04.qcow2"
+  name = "dpdk-base-ubuntu-26.04.qcow2"
   pool = var.storage_pool
 
   create = {

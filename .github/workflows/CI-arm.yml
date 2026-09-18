@@ -11,59 +11,37 @@ on:
 
 jobs:
   dpdk-arm:
-    runs-on: ubuntu-24.04-arm
-    outputs:
-      rust-max: ${{ steps.rust-version.outputs.channel }}
+    runs-on: ubuntu-26.04-arm
     env:
       SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
     - uses: actions/checkout@v7
-
-    - name: Read rust version from toolchain
-      id: rust-version
-      run: |
-        CHANNEL=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
-        echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
 
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.11
       with:
         version: "v0.10.0"
 
-    - name: Install cmake
-      uses: lukka/get-cmake@latest
+    - name: Install rust
+      uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
-        cmakeVersion: "~3.29.0"
+        toolchain: "1.98.1"
+        cache: false
 
-    - name: Install dependencies
+    - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev libssl-dev pkgconf clang lld
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang lld
 
-    - name: Build dpdk
-      run: |
-        cmake -S . -B build
-        cmake --build build --target dpdk_configure
-        cmake --build build --target dpdk_build --parallel
+    - name: Verify DPDK dependencies
+      run: ./scripts/check-deps.sh
 
-    - name: Build DPDK deb package
-      run: |
-        sudo cmake --build build --target dpdk_deb
-
-    - name: Install DPDK from deb
-      run: |
-        sudo cmake --build build --target dpdk_install
-
-    - name: Upload DPDK deb artifact (arm64)
-      uses: actions/upload-artifact@v7
-      with:
-        name: dpdk-deb-arm64
-        path: build/dpdk-net_*.deb
-        if-no-files-found: error
+    - name: Build DPDK bindings
+      run: cargo build -p dpdk-net-sys
 
   build-arm:
-    needs: dpdk-arm
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -79,23 +57,18 @@ jobs:
       run: rm -f rust-toolchain.toml
 
     - name: Install rust stable
-      uses: dtolnay/rust-toolchain@stable
+      uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
-        toolchain: ${{ needs.dpdk-arm.outputs.rust-max }}
+        toolchain: "1.98.1"
         components: clippy
+        cache: false
 
     - uses: taiki-e/install-action@protoc
 
-    - name: Download DPDK deb artifact (arm64)
-      uses: actions/download-artifact@v8
-      with:
-        name: dpdk-deb-arm64
-        path: build/
-
-    - name: Install DPDK deb
+    - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y lld ./build/dpdk-net_*.deb
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang lld
 
     - name: Run cargo check
       run: cargo check --all-targets

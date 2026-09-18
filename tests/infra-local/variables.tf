@@ -37,7 +37,7 @@ variable "storage_pool" {
 variable "base_image_url" {
   description = "URL to Ubuntu cloud image"
   type        = string
-  default     = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+  default     = "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img"
 }
 
 variable "vm_count" {

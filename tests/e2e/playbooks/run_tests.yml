@@ -14,8 +14,7 @@
         if command -v dpdk-testpmd &> /dev/null; then
           dpdk-testpmd --version 2>&1 || echo "testpmd available"
         else
-          echo "dpdk-testpmd not found in PATH, checking /usr/local/bin"
-          ls -la /usr/local/bin/dpdk-* 2>/dev/null || echo "No dpdk binaries found"
+          echo "dpdk-testpmd not found in PATH"
         fi
       register: testpmd_check
       changed_when: false
@@ -27,8 +26,7 @@
 
     - name: Check DPDK device bindings
       ansible.builtin.shell: |
-        # Look for dpdk-devbind script
-        DEVBIND=$(find /usr/local -name "dpdk-devbind.py" 2>/dev/null | head -1)
+        DEVBIND=$(command -v dpdk-devbind.py || true)
         if [ -n "$DEVBIND" ]; then
           python3 "$DEVBIND" --status
         else

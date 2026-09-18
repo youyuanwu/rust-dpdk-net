@@ -8,69 +8,44 @@ on:
 
 jobs:
   dpdk:
-    runs-on: ubuntu-latest
-    outputs:
-      rust-min: '1.93.1'
-      rust-max: ${{ steps.rust-version.outputs.channel }}
+    runs-on: ubuntu-26.04
     env:
       SCCACHE_GHA_ENABLED: "true"
-      # maybe ninja dpdk auto detects sccache?
+      RUSTC_WRAPPER: "sccache"
     steps:
     - uses: actions/checkout@v7
-
-    - name: Read rust version from toolchain
-      id: rust-version
-      run: |
-        CHANNEL=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
-        echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
 
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.11
       with:
         version: "v0.10.0"
 
-    - name: Install cmake
-      uses: lukka/get-cmake@latest
+    - name: Install rust
+      uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
-        cmakeVersion: "~3.29.0" # Use version 3.29.x
+        toolchain: "1.98.1"
+        cache: false
 
-    - name: Install dependencies
+    - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y meson ninja-build python3-pyelftools libnuma-dev libssl-dev pkgconf clang
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang
 
-    - name: Build dpdk
-      run: |
-        cmake -S . -B build
-        cmake --build build --target dpdk_configure
-        cmake --build build --target dpdk_build --parallel
+    - name: Verify DPDK dependencies
+      run: ./scripts/check-deps.sh
 
-    - name: Build DPDK deb package
-      # sudo needed: meson install writes to /usr/local log dir even with DESTDIR staging
-      run: |
-        sudo cmake --build build --target dpdk_deb
-
-    - name: Install DPDK from deb
-      run: |
-        sudo cmake --build build --target dpdk_install
-
-    - name: Upload DPDK deb artifact
-      uses: actions/upload-artifact@v7
-      with:
-        name: dpdk-deb
-        path: build/dpdk-net_*.deb
-        if-no-files-found: error
+    - name: Build DPDK bindings
+      run: cargo build -p dpdk-net-sys
 
   build:
-    needs: dpdk
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest ]
+        os: [ ubuntu-26.04 ]
         rust:
-          - ${{ needs.dpdk.outputs.rust-min }}
-          - ${{ needs.dpdk.outputs.rust-max }}
+          - "1.93.1"
+          - "1.98.1"
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -86,23 +61,18 @@ jobs:
       run: rm -f rust-toolchain.toml
 
     - name: Install rust stable
-      uses: dtolnay/rust-toolchain@stable
+      uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
         toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
+        cache: false
 
     - uses: taiki-e/install-action@protoc
 
-    - name: Download DPDK deb artifact
-      uses: actions/download-artifact@v8
-      with:
-        name: dpdk-deb
-        path: build/
-
-    - name: Install DPDK deb
+    - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y ./build/dpdk-net_*.deb
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang
 
     - name: Run cargo check
       run: cargo +${{ matrix.rust }} check --all-targets
@@ -117,8 +87,7 @@ jobs:
       run: cargo +${{ matrix.rust }} test --all -- --nocapture
 
   release:
-    needs: dpdk
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -134,22 +103,17 @@ jobs:
       run: rm -f rust-toolchain.toml
 
     - name: Install rust stable
-      uses: dtolnay/rust-toolchain@stable
+      uses: actions-rust-lang/setup-rust-toolchain@v2
       with:
-        toolchain: ${{ needs.dpdk.outputs.rust-max }}
+        toolchain: "1.98.1"
+        cache: false
 
     - uses: taiki-e/install-action@protoc
 
-    - name: Download DPDK deb artifact
-      uses: actions/download-artifact@v8
-      with:
-        name: dpdk-deb
-        path: build/
-
-    - name: Install DPDK deb
+    - name: Install Ubuntu DPDK
       run: |
         sudo apt-get update
-        sudo apt-get install -y ./build/dpdk-net_*.deb
+        sudo apt-get install -y libdpdk-dev libjitterentropy3-dev pkgconf clang
 
     - name: Build release binaries
       run: cargo build --release --bin dpdk-bench-server --bin dpdk-bench-client
@@ -165,7 +129,7 @@ jobs:
 
   e2e:
     # No 'needs: build' - runs in parallel, waits for artifacts via polling
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
     - uses: actions/checkout@v7
 
@@ -276,13 +240,13 @@ jobs:
         echo "Waiting for build artifacts to be ready..."
         for i in {1..120}; do
           ARTIFACTS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts --jq '.artifacts[].name' 2>/dev/null || echo "")
-          if echo "$ARTIFACTS" | grep -q "dpdk-deb" && echo "$ARTIFACTS" | grep -q "bench-binaries"; then
-            echo "All artifacts are ready!"
+          if echo "$ARTIFACTS" | grep -q "bench-binaries"; then
+            echo "Bench binaries are ready!"
             exit 0
           fi
 
-          # Check if dpdk or release jobs failed
-          JOBS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name == "dpdk" or .name == "release") | .name + "=" + (.conclusion // "pending")' 2>/dev/null || echo "")
+          # Check if the release job failed
+          JOBS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[] | select(.name == "release") | .name + "=" + (.conclusion // "pending")' 2>/dev/null || echo "")
           if echo "$JOBS" | grep -qE '=(failure|cancelled)'; then
             echo "A required job failed or was cancelled!"
             echo "$JOBS"
@@ -295,12 +259,6 @@ jobs:
         echo "Timeout waiting for artifacts"
         exit 1
 
-    - name: Download DPDK deb artifact
-      uses: actions/download-artifact@v8
-      with:
-        name: dpdk-deb
-        path: build/
-
     - name: Download bench binaries artifact
       uses: actions/download-artifact@v8
       with:
@@ -309,9 +267,6 @@ jobs:
 
     - name: List downloaded artifacts
       run: |
-        echo "=== DPDK deb package ==="
-        ls -la build/*.deb
-        echo ""
         echo "=== Bench binaries ==="
         ls -la target/release/dpdk-bench-*
         chmod +x target/release/dpdk-bench-*
