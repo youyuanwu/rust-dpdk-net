@@ -698,7 +698,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1155,13 +1155,14 @@ dependencies = [
 
 [[package]]
 name = "kimojio"
-version = "0.17.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a8c994450de6ca400e314d2aeac42156c81cd833fe8f05cef2a7e4adcf40cad"
+checksum = "1c68bc15ef9208642c33f3d3d2a1864e2c98e83731d47d797e3c26999931e0dc"
 dependencies = [
  "futures",
  "impls",
  "intrusive-collections",
+ "kimojio-json",
  "kimojio-macros",
  "libc",
  "pin-project-lite",
@@ -1174,13 +1175,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "kimojio-macros"
-version = "0.17.0"
+name = "kimojio-json"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66e6b7673312d1510674114bf095b7e68f35c82d0ab7f47d579614d1e2ed4aec"
+checksum = "2ab2c02d5f363da402245f3508903b59ab1dc657a30e9c3ad2b99ffba9077da3"
+
+[[package]]
+name = "kimojio-macros"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dc54064f97a5d8c67b9c6797a3f21cd6ee9be71639b89fd9ae2737a5a8294ef"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -1705,7 +1712,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1840,7 +1847,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2108,7 +2115,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
