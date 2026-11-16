@@ -608,7 +608,6 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "axum",
- "clap",
  "ctrlc",
  "dpdk-net",
  "dpdk-net-quinn",
