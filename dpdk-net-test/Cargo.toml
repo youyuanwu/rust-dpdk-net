@@ -19,9 +19,6 @@ hyper-util.workspace = true
 socket2.workspace = true
 httparse.workspace = true
 kimojio.workspace = true
-tonic.workspace = true
-tonic-tls.workspace = true
-prost.workspace = true
 
 [build-dependencies]
 tonic-prost-build.workspace = true
@@ -29,6 +26,9 @@ tonic-prost-build.workspace = true
 [dev-dependencies]
 tracing-subscriber.workspace = true
 tonic-prost.workspace = true
+tonic.workspace = true
+tonic-tls.workspace = true
+prost.workspace = true
 serial_test.workspace = true
 dpdk-net-util.workspace = true
 dpdk-net-tonic = { workspace = true, features = ["tls"] }
