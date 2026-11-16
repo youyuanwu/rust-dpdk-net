@@ -10,11 +10,9 @@ smoltcp.workspace = true
 arrayvec.workspace = true
 nix = { workspace = true, features = ["net"] }
 dpdk-net.workspace = true
-clap.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "net", "signal", "time", "io-util"] }
 tokio-util.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
 hyper = { workspace = true }
 http-body-util.workspace = true
 hyper-util.workspace = true
@@ -22,7 +20,6 @@ socket2.workspace = true
 httparse.workspace = true
 kimojio.workspace = true
 tonic.workspace = true
-tonic-prost.workspace = true
 tonic-tls.workspace = true
 prost.workspace = true
 
@@ -30,6 +27,8 @@ prost.workspace = true
 tonic-prost-build.workspace = true
 
 [dev-dependencies]
+tracing-subscriber.workspace = true
+tonic-prost.workspace = true
 serial_test.workspace = true
 dpdk-net-util.workspace = true
 dpdk-net-tonic = { workspace = true, features = ["tls"] }

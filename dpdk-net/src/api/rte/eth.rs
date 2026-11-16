@@ -578,10 +578,10 @@ impl EthDev {
         // Configure each entry to map to queues in round-robin
         for (group_idx, group) in reta_conf.iter_mut().enumerate() {
             group.mask = u64::MAX; // Update all entries in this group
-            for i in 0..64 {
+            for (i, entry) in group.reta.iter_mut().enumerate() {
                 let entry_idx = group_idx * 64 + i;
                 if entry_idx < reta_size as usize {
-                    group.reta[i] = (entry_idx % nb_rx_queues as usize) as u16;
+                    *entry = (entry_idx % nb_rx_queues as usize) as u16;
                 }
             }
         }
@@ -641,10 +641,10 @@ impl EthDev {
         // Collect all RETA entries
         let mut result = Vec::with_capacity(reta_size as usize);
         for (group_idx, group) in reta_conf.iter().enumerate() {
-            for i in 0..64 {
+            for (i, entry) in group.reta.iter().enumerate() {
                 let entry_idx = group_idx * 64 + i;
                 if entry_idx < reta_size as usize {
-                    result.push(group.reta[i]);
+                    result.push(*entry);
                 }
             }
         }
