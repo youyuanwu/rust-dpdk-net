@@ -20,7 +20,7 @@ ctrlc = { version = "3", features = ["termination"] }
 smoltcp = { version = "0.14", default-features = false, features = ["std", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "async"] }
 arrayvec = "0.7"
 serial_test = "4"
-nix = { version = "0.31", features = [] }
+nix = { version = "0.32", features = [] }
 tokio = { version = "1", default-features = false, features = [] }
 tokio-util = { version = "0.7", features = ["compat"] }
 futures-core = "0.3"
